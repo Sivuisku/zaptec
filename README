@@ -1,1 +1,35 @@
-Laskutus äppi zaptec pro:lle
+Laskutus ohjelma zaptec pro järjestelmälle.
+
+Tämän ohjelman tarkoitus on helpottaa taloyhtiön laskutusta Zaptec pro latausjärjestelmässä.
+Taloyhtiössä on oma sähköliittymä latausinfralle. Sähkösopimus on pörssisähkö.
+Latausinfraan kuuluu useita Zaptec pro latausyksiköitä.
+
+Tarkoitus on että tällä ohjelmalla voisi luodat laskut kaikille käyttäjille kulutksen ja hinnan perusteella.
+
+Ohjelma vaatii yhteydet Entsoe:hen ja zaptec-portaaliin. Kumpikin vaatii Api-avaimen.
+Entsoe on eurooppalainen pörssisähkö yhdistys josta saa kysyttyä suomen pörssisähköhinnan.
+Entroe:hen pitää rekisteröityä ja pyytää avain että saa luettua hintatietoja. Apiavain on voimassa koko ajan.
+
+Zaptec-protaalin kautta saa kyseltyä jokaisesta latausasemasta kulutustiedot 15 minuutin tarkkuudella.
+Myös Zaptec portaaliin tarvitaan avain. Se on voimassa vain tietyn aikaa ja pitää käydä uudestaan
+kirjaantumassa Zaptec portaaliin että saa uuden avaimen.
+
+Ohjelma tarvitsee lisäksi tietoja hinnoittelusta. Esimerkiksi vero, markinaali, kuukausimaksi etc.
+Lisää ohjeita saa kun alkaa käyttämään ohjelmaa. Ohjelmalle voi antaa aikajakson miltä ajalta kulutus
+ja hintatiedot haetaan. Hintatiedot tallennetaan json tiedostoihin.
+
+Ohjelma tekee excel tiedoston jossa on jokaisen laturin kulutustiedot ja hinnat.
+
+
+Zaptec portaali: https://api.zaptec.com/help/index.html
+Miten tätä voisi käyttää https://help.zaptec.com/hc/en-001/articles/6062673456657-Access-to-Installations-Authentication-for-Third-Parties#h_01HMTW38NDKN1A1TZ7B8M7N7BP
+
+ToDo:
+Talvipäivän hinta on eri kuin muuna aikana:
+Talvipäivät: 1.11.-31.3. ma-la klo 7-22.
+
+
+bug list:
+Laturihistoria saattaa ulottua aikaisemmaksi kuin valittu ajanjakso jos lataus on alkanut aikaisemmin. Tästä johtuen tuntihintatietoja ei välttämättä ole sille ajalle.
+-> tarkista että tunnit laskutetaan vain ajanjaksolta joka on valittu. Eli voi alkaa ja loppua kesken lataus session.
+Tarkistaa että miten toimii lopussa. Onko silloinkin koko sessio vaikka loppuu esim 31.7 ja lataus sessio on kestänyt 1.8 puolelle asti.

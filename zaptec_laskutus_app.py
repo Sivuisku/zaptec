@@ -51,7 +51,7 @@ left_frame.pack(fill=tk.Y, side=tk.LEFT, padx=5, pady=5)
 #Change apikeys to zaptec and entsoe classes which are used in the app
 class zaptec:
     def __init__(self):
-        self.apikey = "eyJhbGciOiJSUzI1NiIsImtpZCI6Ijc0OUVEQTU0REQ2MzRCOUE5NDM0QjFDODVDNTFBNDEzQzlGMUMwNTkiLCJ4NXQiOiJkSjdhVk4xalM1cVVOTEhJWEZHa0U4bnh3RmsiLCJ0eXAiOiJhdCtqd3QifQ.eyJzdWIiOiIzN2Q5NjNhMS1lMDlkLTRlM2MtODNjYy03NWZjMTU5YzE3Y2EiLCJuYW1lIjoiS2FyaSBTaXZvbmVuICIsImVtYWlsIjoia2FyaW1hdHRpLnNpdm9uZW5AZ21haWwuY29tIiwiYXV0aF90aW1lIjoiMjAyNC0wOS0xMFQxNDoyMDozOC4xODMyNjkxWiIsImF1ZCI6IjQxNGUxOTI3YTM4ODRmNjhhYmM3OWY3MjgzODM3ZmQxIiwib2lfdGtuX2lkIjoiZmNhNDBjZTItY2FmOS00OWI0LWRjOTAtMDhkY2NlODRlNjRhIiwianRpIjoiZjlkZjkyNjMtOTM0Yi00OTY1LTg2MTgtYmQ4MjcxODBkYTIxIiwiZXhwIjoxNzI2MDY0NDM4LCJpc3MiOiJodHRwczovL2FwaS56YXB0ZWMuY29tLyIsImlhdCI6MTcyNTk3ODAzOH0.AbkYvskJXMRD73QtTxOudgNqhklSWV0GLMeA0fvEYjULhEOZiXgAlo_q8uo2F328Svz2i7FXyqIrVtiLMvsUKQzlZpZnoGc4eyUgkQ8Q9T9Hak1kDzJGGQkdya8zc5p2r6dWBUV1MLZIzYTHGbre-ROzNLJcfgjE8YB4I9Kvg2R8hLOii3CFoV5Cypr_DD1tVCpwXuCouLnoie9GkYHDMNUoZlilViVheI2AUqx7_jfl2IJSXWp9nCYzkIfK95BTrn4GrkYcSVqJuKml-OUchfzHYmV71iv2rOfFU7r8nMj6u65ZZXihttWQPf4Pst50GaINZR-i0yhM0dgJdBNVVWsrz7MrGDDw9qDM-YOeZWYl79qFDgkejAPL1cOtiT6y5Yh01dCeRZ-B9pl5lbvo2BRC1UUDBUgIPp0qHNL8oQVYB502qw3TyUyisapigTNYWsYfs1b_CkULK4GOJ9AUboDLzNPyaafYq3wKDPU0r7A_gGaYD0q7t-7hPzMzZHoxq9bY99JoYFEZBwSBoAugAGPaRK-h34DBloq6fcMjxmMNqx_DDU39TqRvwLz2AxQetYFuILpyU3mCDs85o4lCT7YVuqPgzLtriqTiR1C81kEqDq8F3mxpdqVytcd-BWJFwARRTdGQKFYFLaF3Xv1BXl126zgwpIEQcF887eGiM80"
+        self.apikey = ""
         self.headers = {
                 'accept': 'text/plain',
                 'Authorization' : 'Bearer ' + self.apikey
@@ -184,8 +184,8 @@ class entsoe:
 
     def getPriceOfHour(self, date):
         #print("getPriceOfHour for %s %s"%(date.strftime("%Y%m%d%H"), hour))
-        global tax
-        return (self.prices_dict[date.strftime("%Y%m%d%H")]*tax)
+        #global vat
+        return (self.prices_dict[date.strftime("%Y%m%d%H")])
 
     def addLogger(self, outputText):
         self.output = outputText
@@ -206,41 +206,84 @@ fromDate = date.fromisoformat('2024-07-01')
 toDate = date.fromisoformat('2024-07-31')
 
 #Billing info
-tax = 1.24
-transferPrice = 0.0
-margin = 0.5
+vat = 1.24
+transferPrice = 0.92
+transferPriceWinter = 1.31
+margin = 0.49
+basePriceTransfer = 0.0
+tehoMaksu = 0.0
+loisTehoMaksu = 0.0
+basePrice = 0.0
+energyTax = 2.24
+huoltovarmuusmaksu = 0.01
 
-
-def apikey_window():
+def zapteclogin_window():
     # implementation of the login window.
     login_window = tk.Toplevel(root)
-    login_window.title("Anna Apikeyt")
+    login_window.title("Zaptec login")
     login_window.geometry("200x150")
 
     #Add request for apikeys
-    label1 = ttk.Label(login_window, text="Zaptec apikey: ")
+    label1 = ttk.Label(login_window, text="Zaptec käyttäjä ja salasana: ")
     label1.pack()
-    apikey1Entry = ttk.Entry(login_window, show='*')
-    apikey1Entry.focus()
-    apikey1Entry.pack()
-
-    label2 = ttk.Label(login_window, text="Entsoe apikey: ")
-    label2.pack()
-    apikey2Entry = ttk.Entry(login_window, show='*')
-    apikey2Entry.pack()
+    usernameEntry = ttk.Entry(login_window)
+    usernameEntry.focus()
+    usernameEntry.pack()
+    passwordEntry = ttk.Entry(login_window, show='*')
+    passwordEntry.pack()
 
     def close_and_output():
-        global zaptecApi
-        zaptecApi.storeApikey(apikey1Entry.get())
-        output_text.insert(tk.END, "Zaptek apikey: %s\n"%zaptecApi.getApikey())
+
+        token_url = 'https://api.zaptec.com/oauth/token'
+
+        # The payload for the token request
+        payload = {
+            'grant_type': 'password',
+            'username': usernameEntry.get(),
+            'password': passwordEntry.get()
+        }
+
+        # Make the token request
+        response = requests.post(token_url, data=payload)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            token_info = response.json()
+            access_token = token_info['access_token']
+            output_text.insert(tk.END,"Access Token: {access_token}")
+            global zaptecApi
+            zaptecApi.storeApikey(access_token)
+        else:
+            output_text.insert(tk.END,"Failed to obtain token: {response.status_code}")
+            output_text.insert(tk.END,response.text)
+
+        login_window.destroy()
+
+    # login button
+    submit_button = ttk.Button(login_window, text="Hyväksy", command=close_and_output)
+    submit_button.pack()
+
+def entsoekey_window():
+    # implementation of the login window.
+    login_window = tk.Toplevel(root)
+    login_window.title("entsoe key")
+    login_window.geometry("200x150")
+
+    label = ttk.Label(login_window, text="Entsoe apikey: ")
+    label.pack()
+    apikeyEntry = ttk.Entry(login_window, show='*')
+    apikeyEntry.pack()
+
+    def close_and_output():
         global entsoeApi
-        entsoeApi.storeApikey(apikey2Entry.get())
+        entsoeApi.storeApikey(apikeyEntry.get())
         output_text.insert(tk.END, "Entsoe apikey: %s\n"%entsoeApi.getApikey())
         login_window.destroy()
 
     # login button
     submit_button = ttk.Button(login_window, text="Hyväksy", command=close_and_output)
     submit_button.pack()
+
 
 def timeframe_window():
     # implementation of the login window.
@@ -275,51 +318,159 @@ def timeframe_window():
     submit_button = ttk.Button(login_window, text="Hyväksy", command=close_and_output)
     submit_button.pack()
 
-def billingInfo():
+def billInfo():
     # implementation of the login window.
-    billingInfo_window = tk.Toplevel(root)
-    billingInfo_window.title("Hinta tiedot")
-    billingInfo_window.geometry("300x250")
+    billInfo_window = tk.Toplevel(root)
+    billInfo_window.title("Laskun kiinteät hinnat (Ei kulutkseen perustuvat)")
+    billInfo_window.geometry("400x400")
 
-    taxLabel = ttk.Label(billingInfo_window, text="Vero: ")
-    taxLabel.pack()
-    taxEntry = ttk.Entry(billingInfo_window)
-    taxEntry.focus()
-    taxEntry.pack()
+    global basePriceTransfer
+    global tehoMaksu
+    global loisTehoMaksu
+    global basePrice
 
-    marginLabel = ttk.Label(billingInfo_window, text="Marginaali: ")
+    basePriceTransferLabel = ttk.Label(billInfo_window, text="Pientehojännitemaksun perusmaksu (€) sisältää ALV:in")
+    basePriceTransferLabel.pack()
+    basePriceTransferEntry = ttk.Entry(billInfo_window)
+    basePriceTransferEntry.delete(0, tk.END)
+    basePriceTransferEntry.insert(0,basePriceTransfer)
+    basePriceTransferEntry.focus()
+    basePriceTransferEntry.pack()
+
+    basePriceLabel = ttk.Label(billInfo_window, text="Kulutuksen perusmaksu (€) sisältää ALV:in ")
+    basePriceLabel.pack()
+    basePriceEntry = ttk.Entry(billInfo_window)
+    basePriceEntry.delete(0, tk.END)
+    basePriceEntry.insert(0,basePrice)
+    basePriceEntry.focus()
+    basePriceEntry.pack()
+
+    tehoMaksuLabel = ttk.Label(billInfo_window, text="Tehomaksu (€): ")
+    tehoMaksuLabel.pack()
+    tehoMaksuEntry = ttk.Entry(billInfo_window)
+    tehoMaksuEntry.delete(0, tk.END)
+    tehoMaksuEntry.insert(0,tehoMaksu)
+    tehoMaksuEntry.pack()
+
+    loisTehoMaksuLabel = ttk.Label(billInfo_window, text="loistehomaksu (€): ")
+    loisTehoMaksuLabel.pack()
+    loisTehoMaksuEntry = ttk.Entry(billInfo_window)
+    loisTehoMaksuEntry.delete(0, tk.END)
+    loisTehoMaksuEntry.insert(0,loisTehoMaksu)
+    loisTehoMaksuEntry.pack()
+
+    def close_and_output():
+        global basePriceTransfer
+        basePriceTransfer = float(basePriceTransferEntry.get())
+        output_text.insert(tk.END, "Perusmaksu liittymä: %s\n"%basePriceTransfer)
+        global basePrice
+        basePrice = float(basePriceEntry.get())
+        output_text.insert(tk.END, "Perusmaksu: %s\n"%basePrice)
+        global tehoMaksu
+        global loisTehoMaksu
+        tehoMaksu = float(tehoMaksuEntry.get())
+        loisTehoMaksu = float(loisTehoMaksuEntry.get())
+        output_text.insert(tk.END, "Tehomaksu Talvi: %s snt/kWh\n"%tehoMaksu)
+        output_text.insert(tk.END, "loistehomaksu %s snt/kWh\n"%loisTehoMaksu)
+        billInfo_window.destroy()
+
+
+    # submit button
+    submit_button = ttk.Button(billInfo_window, text="Hyväksy", command=close_and_output)
+    submit_button.pack()
+
+def pricesInfo():
+    # implementation of the login window.
+    pricesInfo_window = tk.Toplevel(root)
+    pricesInfo_window.title("Hinta tiedot")
+    pricesInfo_window.geometry("300x250")
+
+    global vat
+    global margin
+    global transferPrice
+    global transferPriceWinter
+    global energyTax
+    global huoltovarmuusmaksu
+
+    print("vat: %s"%vat)
+
+    vatLabel = ttk.Label(pricesInfo_window, text="Alv: ")
+    vatLabel.pack()
+    vatEntry = ttk.Entry(pricesInfo_window)
+    vatEntry.delete(0, tk.END)
+    vatEntry.insert(0,vat)
+    vatEntry.focus()
+    vatEntry.pack()
+
+    marginLabel = ttk.Label(pricesInfo_window, text="Marginaali: ")
     marginLabel.pack()
-    marginEntry = ttk.Entry(billingInfo_window)
+    marginEntry = ttk.Entry(pricesInfo_window)
+    marginEntry.delete(0, tk.END)
+    marginEntry.insert(0,margin)
     marginEntry.pack()
 
 
-    transferPriceLabel = ttk.Label(billingInfo_window, text="Siirto hinta: ")
+    transferPriceLabel = ttk.Label(pricesInfo_window, text="Siirtohinta Talvi (snt/kWh): ")
     transferPriceLabel.pack()
-    transferPriceEntry = ttk.Entry(billingInfo_window)
+    transferPriceEntry = ttk.Entry(pricesInfo_window)
+    transferPriceEntry.delete(0, tk.END)
+    transferPriceEntry.insert(0,transferPrice)
     transferPriceEntry.pack()
+    transferPriceLabelWinter = ttk.Label(pricesInfo_window, text="Siirtohinta muu aika (snt/kWh): ")
+    transferPriceLabelWinter.pack()
+    transferPriceEntryWinter = ttk.Entry(pricesInfo_window)
+    transferPriceEntryWinter.delete(0, tk.END)
+    transferPriceEntryWinter.insert(0,transferPriceWinter)
+    transferPriceEntryWinter.pack()
+
+    energyTaxLabel = ttk.Label(pricesInfo_window, text="Energia vero (snt/kWh): ")
+    energyTaxLabel.pack()
+    energyTaxEntry = ttk.Entry(pricesInfo_window)
+    energyTaxEntry.delete(0, tk.END)
+    energyTaxEntry.insert(0,energyTax)
+    energyTaxEntry.pack()
+
+    huoltovarmuusmaksuLabel = ttk.Label(pricesInfo_window, text="Huoltovarmuusmaksu (snt/kWh): ")
+    huoltovarmuusmaksuLabel.pack()
+    huoltovarmuusmaksuEntry = ttk.Entry(pricesInfo_window)
+    huoltovarmuusmaksuEntry.delete(0, tk.END)
+    huoltovarmuusmaksuEntry.insert(0,huoltovarmuusmaksu)
+    huoltovarmuusmaksuEntry.pack()
+
 
     def close_and_output():
-        global tax
-        tax = taxEntry.get()
-        output_text.insert(tk.END, "Vero: %s\n"%tax)
+        global vat
+        vat = float(vatEntry.get())
+        output_text.insert(tk.END, "Vero: %s\n"%vat)
         global margin
-        margin = marginEntry.get()
+        margin = float(marginEntry.get())
         output_text.insert(tk.END, "Marginaali: %s\n"%margin)
         global transferPrice
-        transferPrice = transferPriceEntry.get()
-        output_text.insert(tk.END, "Siirto hinta: %s\n"%transferPrice)
-        billingInfo_window.destroy()
+        global transferPriceWinter
+        transferPrice = float(transferPriceEntry.get())
+        transferPriceWinter = float(transferPriceEntryWinter.get())
+        output_text.insert(tk.END, "Siirtohinta Talvi: %s snt/kWh\n"%transferPriceWinter)
+        output_text.insert(tk.END, "Siirtohinta muu aika %s snt/kWh\n"%transferPrice)
+        global energyTax
+        energyTax = float(energyTaxEntry.get())
+        output_text.insert(tk.END, "Energia vero: %s snt/kWh\n"%energyTax)
+        global huoltovarmuusmaksu
+        huoltovarmuusmaksu = float(huoltovarmuusmaksuEntry.get())
+        output_text.insert(tk.END, "Huoltovarmuusmaksu: %s snt/kWh\n"%huoltovarmuusmaksu)
+        pricesInfo_window.destroy()
 
 
-    # login button
-    submit_button = ttk.Button(billingInfo_window, text="Hyväksy", command=close_and_output)
+    # submit button
+    submit_button = ttk.Button(pricesInfo_window, text="Hyväksy", command=close_and_output)
     submit_button.pack()
 
 settings_menu = tk.Menu(menu_bar, tearoff=0)
 menu_bar.add_cascade(label="Asetukset", menu=settings_menu)
-settings_menu.add_command(label="Avaimet", command=apikey_window )
+settings_menu.add_command(label="Zaptec login", command=zapteclogin_window )
+settings_menu.add_command(label="entsoe avain", command=entsoekey_window )
 settings_menu.add_command(label="Ajanjakso", command=timeframe_window )
-settings_menu.add_command(label="Maksutiedot", command=billingInfo )
+settings_menu.add_command(label="Hintatiedot", command=pricesInfo )
+settings_menu.add_command(label="Laskun tiedot", command=billInfo )
 
 def print_apikey():
     global zaptecApi
@@ -339,7 +490,7 @@ def isDateInWinterPriceTime(daytime):
 
     #If date is between 31.3 - 1.11
     if winterDateEnd < daytime < winterDateStart:
-        print ("Date is not in winter time")
+        #print ("Date is not in winter time")
         return False
     else:
         if winterHourStart < daytime < winterHourEnd :
@@ -351,6 +502,8 @@ def calculate_invoice():
     #Implement here invoice generation. Connect to entsoe and zaptec portal for data and calculate all eslected chargers invoice
     global fromDate
     global toDate
+    global transferPrice
+    global transferPriceWinter
     print (type(fromDate))
     print (fromDate)
     print (toDate)
@@ -367,19 +520,28 @@ def calculate_invoice():
     summarySheet.title = "Yhteenveto"
     summarySheet['A1'] = "Ajanjakso:"
     summarySheet['B1'] = "%s - %s"%(fromDate, toDate)
-    summarySheet["B2"] = "Talvipäivä"
-    summarySheet["B3"] = "Muu aika"
+    summarySheet["C2"] = "Talvipäivä (%s snt/kWh)"%transferPriceWinter
+    summarySheet["D2"] = "muu aika (%s snt/kWh)"%transferPrice
 
-    summarySheet["A3"] = "Kokonaiskulutus:"
-    summarySheet["A4"] = "Keskihinta:"
-    summarySheet["A5"] = "Kokonaishinta:"
+    summarySheet["A3"] = "Kokonaiskulutus (kWh):"
+    summarySheet["A4"] = "Pörssisähkön Keskihinta (€/kWh):"
+    summarySheet["A5"] = "Pörssisähkön Kokonaishinta (€):"
+    summarySheet["A6"] = "Siirtomaksu (€):"
 
-    summarySheet['A7'] = "Laturi"
-    summarySheet['B7'] = "Kokonaiskulutus"
-    summarySheet['C7'] = "Keskihinta"
-    summarySheet['D7'] = "Hinta yhteensä"
+    summarySheet['A8'] = "Laturi"
+    summarySheet['B8'] = "Kokonaiskulutus (kWh)"
+    summarySheet['C8'] = "Keskihinta (€/kWh)"
+    summarySheet['D8'] = "Siirtohinta Talviaika (€)"
+    summarySheet['E8'] = "Siirtohinta muu aika (€)"
+    summarySheet['F8'] = "Marginaali (€)"
+    summarySheet['F8'] = "Energiavero (€)"
+    summarySheet['G8'] = "ALV (€)"
+    summarySheet['H8'] = "Kulutuksen hinta (€)"
+    summarySheet['H8'] = "Kiinteät kulut (€)"
+    summarySheet['H8'] = "Yhteensä (€)"
 
     totalEnergy = 0.0
+    totalEnergyWinter = 0.0
     totalPrice = 0.0
 
     chargerSheets= {}
@@ -409,20 +571,24 @@ def calculate_invoice():
 
                             chargerSheets[chargerName].cell(row=1, column=1, value="%s lataustiedot aikavälillä %s - %s"%(chargerName, fromDate, toDate))
 
-                            chargerSheets[chargerName].cell(row=2, column=2, value="Talvipäivä")
-                            chargerSheets[chargerName].cell(row=2, column=3, value="Muu aika")
-                            chargerSheets[chargerName].cell(row=3, column=1, value="Kokonaiskulutus:")
-                            chargerSheets[chargerName].cell(row=4, column=1, value="Keskihinta:")
-                            chargerSheets[chargerName].cell(row=5, column=1, value="hinta yhteensä:")
+                            chargerSheets[chargerName].cell(row=3, column=3, value="Talvipäivä")
+                            chargerSheets[chargerName].cell(row=3, column=4, value="Muu aika")
+                            chargerSheets[chargerName].cell(row=4, column=1, value="Kokonaiskulutus:")
+                            chargerSheets[chargerName].cell(row=5, column=1, value="Keskihinta:")
+                            chargerSheets[chargerName].cell(row=6, column=1, value="hinta yhteensä:")
 
-                            chargerSheets[chargerName].cell(row=7, column=1, value="Latausjaksojen yhteenveto:")
-                            header = ["jakso", "Aikaväli", "Kulutus", "keskihinta", "hinta", "Kulutus talviaikana", "Kulutus muuna aikana"]
+                            chargerSheets[chargerName].cell(row=8, column=1, value="Latausjaksojen yhteenveto:")
+                            header = ["jakso", "Aikaväli", "Kulutus (kWh)", "keskihinta (€/kWh)", "hinta (€)", "Kulutus talviaikana (kWh)", "Kulutus muuna aikana (kWh)","","","Aika","Kulutus","hinta"]
                             chargerSheets[chargerName].append(header)
 
                             sessioIndex = 0
                             ChargerTotalEnergy = 0.0
                             chargerTotalPrice = 0.0
                             ChargerTotalEnergyWinter = 0.0
+                            hourPriceTimeColumn = 10
+                            hourPriceUsageColumn = 11
+                            hourPriceColumn = 12
+                            hourPriceInfoRow = 10
 
                             for session in chargerHistory["Data"]:
                                 sessioIndex += 1
@@ -454,37 +620,55 @@ def calculate_invoice():
                                     minutes = daytime.minute
                                     if minutes == 0 :
                                         daytime = daytime - timedelta(hours=1)
+
+                                    #Charger session can be from one day to another day started before time period we are interesting
+                                    #and ended after time period we are interesting
+                                    #We have to check if time is in the time period we are interesting
+                                    if daytime.date() < fromDate or daytime.date() > toDate:
+                                        print("Time is not in the time period we are interesting: %s"%daytime)
+                                        continue
+
                                     price = float(entsoeApi.getPriceOfHour(daytime))
+
+                                    chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceTimeColumn, value=timestamp)
+                                    chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceUsageColumn, value=energy)
+                                    chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceColumn, value=price)
+                                    hourPriceInfoRow += 1
 
                                     #Check if time is in winter price time
                                     if isDateInWinterPriceTime(daytime) :
                                         print (daytime)
                                         print ("is on winter time")
                                         totalEnergyFromHoursWinter = (totalEnergyFromHoursWinter + energy)
-                                    else:
-                                        print ("is not on winter time")
+                                    #else:
+                                    #    print ("is not on winter time")
 
                                     totalEnergyFromHours = (totalEnergyFromHours + energy)
                                     totalEnergyPriceFromHours = totalEnergyPriceFromHours + (energy*price)
 
-                                averagePriceForSessionEnergy = totalEnergyPriceFromHours/totalEnergyFromHours
+                                if totalEnergyFromHours == 0:
+                                    averagePriceForSessionEnergy = 0
+                                else:
+                                    averagePriceForSessionEnergy = totalEnergyPriceFromHours/totalEnergyFromHours
+
                                 chargerSheets[chargerName].append([sessioIndex, "%s - %s"%(session["StartDateTime"], session["EndDateTime"]), sessionTotalEnergy, averagePriceForSessionEnergy, (sessionTotalEnergy*averagePriceForSessionEnergy), totalEnergyFromHoursWinter, (totalEnergyFromHours - totalEnergyFromHoursWinter)])
                                 chargerTotalPrice = chargerTotalPrice + totalEnergyPriceFromHours
                                 ChargerTotalEnergyWinter = ChargerTotalEnergyWinter + totalEnergyFromHoursWinter
 
-                            summaryRow=chargerIndex+6
+                            summaryRow=chargerIndex+8
                             #print("Summary row: %s"%summaryRow)
 
                             totalEnergy = totalEnergy + ChargerTotalEnergy
+                            totalEnergyWinter = totalEnergyWinter + ChargerTotalEnergyWinter
                             totalPrice = totalPrice + chargerTotalPrice
                             if sessioIndex > 0:
 
-                                chargerSheets[chargerName].cell(row=3, column=2, value=ChargerTotalEnergy)
-                                chargerSheets[chargerName].cell(row=3, column=3, value=ChargerTotalEnergyWinter)
-                                chargerSheets[chargerName].cell(row=3, column=4, value=(ChargerTotalEnergy - ChargerTotalEnergyWinter))
+                                chargerSheets[chargerName].cell(row=4, column=2, value=ChargerTotalEnergy)
+                                chargerSheets[chargerName].cell(row=4, column=3, value=ChargerTotalEnergyWinter)
+                                chargerSheets[chargerName].cell(row=4, column=4, value=(ChargerTotalEnergy - ChargerTotalEnergyWinter))
                                 if ChargerTotalEnergy != 0 :
-                                    chargerSheets[chargerName].cell(row=4, column=2, value=(chargerTotalPrice/ChargerTotalEnergy))
-                                chargerSheets[chargerName].cell(row=5, column=2, value=chargerTotalPrice)
+                                    chargerSheets[chargerName].cell(row=5, column=2, value=(chargerTotalPrice/ChargerTotalEnergy))
+                                chargerSheets[chargerName].cell(row=6, column=2, value=chargerTotalPrice)
 
 
                                 summarySheet.cell(row=summaryRow, column=1, value=chargerName)
@@ -505,12 +689,13 @@ def calculate_invoice():
                             return False
 
 
-    summarySheet["A2"] = "Kokonaiskulutus:"
-    summarySheet["B2"] = totalEnergy
-    summarySheet["A3"] = "Keskihinta:"
-    summarySheet["B3"] = totalPrice/totalEnergy
-    summarySheet["A4"] = "Kokonaishinta"
-    summarySheet["B4"] = totalPrice
+    summarySheet["B3"] = totalEnergy
+    summarySheet["C3"] = totalEnergyWinter
+    summarySheet["D3"] = (totalEnergy -totalEnergyWinter)
+    summarySheet["B4"] = totalPrice/totalEnergy
+    summarySheet["B5"] = totalPrice
+    summarySheet["C6"] = (totalEnergyWinter*transferPriceWinter)
+    summarySheet["D6"] = ((totalEnergy - totalEnergyWinter)*transferPrice)/100
 
     wb.save("Lasku %s - %s.xlsx"%(fromDate,toDate))
     output_text.insert(tk.END, "Lasku %s - %s.xlsx luotu\n"%(fromDate,toDate))
