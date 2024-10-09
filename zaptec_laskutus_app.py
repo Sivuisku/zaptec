@@ -167,12 +167,12 @@ class entsoe:
 
 
         print("Start price time dict handling")
-        for TimeSeries in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"] :
-            periodStartTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["start"])
-            periodEndTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["end"])
+        for period in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"]["Period"] :
+            periodStartTime = datetime.fromisoformat(period["timeInterval"]["start"])
+            periodEndTime = datetime.fromisoformat(period["timeInterval"]["end"])
             print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
 
-            for point in TimeSeries["Period"]["Point"] :
+            for point in period["Point"] :
                 positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
                 #print ("%s"%positiontime.strftime("%Y%m%d%H"))
                 #print ("Price: %s Euros / MWH"%point["price.amount"])
@@ -185,7 +185,24 @@ class entsoe:
     def getPriceOfHour(self, date):
         #print("getPriceOfHour for %s %s"%(date.strftime("%Y%m%d%H"), hour))
         #global vat
-        return (self.prices_dict[date.strftime("%Y%m%d%H")])
+        try:
+            return (self.prices_dict[date.strftime("%Y%m%d%H")])
+        except KeyError:
+            print("For some reason entsoe api not have given any price data for %s"%date.strftime("%Y%m%d%H"))
+            print("Try to use first one hour before and then one hour after if not found")
+            dateMinusOneH = date - timedelta(hours=1)
+            try:
+                return (self.prices_dict[dateMinusOneH.strftime("%Y%m%d%H")])
+            except KeyError:
+                print("No match one hour before. Try one hour after")
+                datePlusOneH = date + timedelta(hours=1)
+                try:
+                    return (self.prices_dict[datePlusOneH.strftime("%Y%m%d%H")])
+                except KeyError:
+                    print("No found hour before or hour after. No can do. Exit 1")
+                    print(self.prices_dict)
+
+
 
     def addLogger(self, outputText):
         self.output = outputText
