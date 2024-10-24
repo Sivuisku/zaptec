@@ -113,13 +113,11 @@ class zaptec:
 
         else:
 
-            print ("requesturl: %s"%(self.chargerHistory_url%(chargerId, startTime, self.firsthoururl, endTime, self.lasthoururl)))
+            print ("requesturl: %s"%(self.chargerHistory_url%(chargerId, (startTime-timedelta(days=1)), self.firsthoururl, endTime, self.lasthoururl)))
             #print ("Request header: %s"%self.headers)
-            response = requests.get(self.chargerHistory_url%(chargerId, startTime, self.firsthoururl, endTime, self.lasthoururl), headers=self.headers)
+            response = requests.get(self.chargerHistory_url%(chargerId, (startTime-timedelta(days=1)), self.firsthoururl, endTime, self.lasthoururl), headers=self.headers)
             if response.status_code == 200:
-                #For debugging
-                #If file exist read it
-
+                #Changer usage info is in UTC time
                 self.chargerHistories[chargerName] = response.json()
                 self.output.insert(tk.END, "Laturitiedot haettu onnistuneesti\n")
                 #For debugging
@@ -142,9 +140,11 @@ class entsoe:
 
     def getDayAheadData(self,startTime, endTime):
 
-        #If file exist read it
-        startimestring = "%s0000"%startTime.strftime("%Y%m%d")
+        #Entsoe returns always UTC time. Start time and end time are in correct time zone.
+        #Move starttime one day before in entsoe request
+        startimestring = "%s0000"%(startTime-timedelta(days=1)).strftime("%Y%m%d")
         endTimeString = "%s0000"%endTime.strftime("%Y%m%d")
+        #If file exist read it
         if os.path.exists("entsoe_%s_%s.json" % (startimestring, endTimeString)):
             with open("entsoe_%s_%s.json" % (startimestring, endTimeString), "r") as file:
                 self.dayahead_dict = json.load(file)
@@ -167,16 +167,34 @@ class entsoe:
 
 
         print("Start price time dict handling")
-        for period in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"]["Period"] :
-            periodStartTime = datetime.fromisoformat(period["timeInterval"]["start"])
-            periodEndTime = datetime.fromisoformat(period["timeInterval"]["end"])
-            print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
 
-            for point in period["Point"] :
-                positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
-                #print ("%s"%positiontime.strftime("%Y%m%d%H"))
-                #print ("Price: %s Euros / MWH"%point["price.amount"])
-                self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
+        if isinstance(self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"], list):
+            print("For some reason some times entsoe returns different kind xml/json files")
+            print("Now TimeSeries are list of periods")
+            for TimeSeries in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"] :
+                periodStartTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["start"])
+                periodEndTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["end"])
+                print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
+
+                for point in TimeSeries["Period"]["Point"] :
+                    positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
+                    #print ("%s"%positiontime.strftime("%Y%m%d%H"))
+                    #print ("Price: %s Euros / MWH"%point["price.amount"])
+                    self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
+        else:
+            print("For some reason some times entsoe returns different kind xml/json files")
+            print("Now in TimeSeries there is period dictionary")
+
+            for period in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"]["Period"] :
+                periodStartTime = datetime.fromisoformat(period["timeInterval"]["start"])
+                periodEndTime = datetime.fromisoformat(period["timeInterval"]["end"])
+                print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
+
+                for point in period["Point"] :
+                    positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
+                    #print ("%s"%positiontime.strftime("%Y%m%d%H"))
+                    #print ("Price: %s Euros / MWH"%point["price.amount"])
+                    self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
 
         print("Price dict handled")
         #print(self.prices_dict)
@@ -346,7 +364,7 @@ def billInfo():
     global loisTehoMaksu
     global basePrice
 
-    basePriceTransferLabel = ttk.Label(billInfo_window, text="Pientehojännitemaksun perusmaksu (€) sisältää ALV:in")
+    basePriceTransferLabel = ttk.Label(billInfo_window, text="Liittymän (€) sisältää ALV:n")
     basePriceTransferLabel.pack()
     basePriceTransferEntry = ttk.Entry(billInfo_window)
     basePriceTransferEntry.delete(0, tk.END)
@@ -354,7 +372,7 @@ def billInfo():
     basePriceTransferEntry.focus()
     basePriceTransferEntry.pack()
 
-    basePriceLabel = ttk.Label(billInfo_window, text="Kulutuksen perusmaksu (€) sisältää ALV:in ")
+    basePriceLabel = ttk.Label(billInfo_window, text="Kulutuksen perusmaksu (€) sisältää ALV:n ")
     basePriceLabel.pack()
     basePriceEntry = ttk.Entry(billInfo_window)
     basePriceEntry.delete(0, tk.END)
@@ -362,14 +380,14 @@ def billInfo():
     basePriceEntry.focus()
     basePriceEntry.pack()
 
-    tehoMaksuLabel = ttk.Label(billInfo_window, text="Tehomaksu (€): ")
+    tehoMaksuLabel = ttk.Label(billInfo_window, text="Tehomaksu (€): sisältää ALV:n")
     tehoMaksuLabel.pack()
     tehoMaksuEntry = ttk.Entry(billInfo_window)
     tehoMaksuEntry.delete(0, tk.END)
     tehoMaksuEntry.insert(0,tehoMaksu)
     tehoMaksuEntry.pack()
 
-    loisTehoMaksuLabel = ttk.Label(billInfo_window, text="loistehomaksu (€): ")
+    loisTehoMaksuLabel = ttk.Label(billInfo_window, text="loistehomaksu (€): sisältää ALV:n")
     loisTehoMaksuLabel.pack()
     loisTehoMaksuEntry = ttk.Entry(billInfo_window)
     loisTehoMaksuEntry.delete(0, tk.END)
@@ -387,8 +405,8 @@ def billInfo():
         global loisTehoMaksu
         tehoMaksu = float(tehoMaksuEntry.get())
         loisTehoMaksu = float(loisTehoMaksuEntry.get())
-        output_text.insert(tk.END, "Tehomaksu Talvi: %s snt/kWh\n"%tehoMaksu)
-        output_text.insert(tk.END, "loistehomaksu %s snt/kWh\n"%loisTehoMaksu)
+        output_text.insert(tk.END, "Tehomaksu Talvi: %s €/kW\n"%tehoMaksu)
+        output_text.insert(tk.END, "loistehomaksu %s €/kvar\n"%loisTehoMaksu)
         billInfo_window.destroy()
 
 
@@ -515,12 +533,136 @@ def isDateInWinterPriceTime(daytime):
         else:
             return False
 
+def generate_excel(data):
+
+    global fromDate
+    global toDate
+    global transferPrice
+    global transferPriceWinter
+    global energyTax
+    global vat
+    global tehoMaksu
+    global loisTehoMaksu
+    huoltovarmuusmaksu = 0.01
+
+    wb = openpyxl.Workbook()
+    summarySheet = wb.active
+    summarySheet.title = "Yhteenveto"
+
+    #Column B
+    summarySheet['B2'] = "Kulutuslasku"
+    summarySheet['B3'] = "Pienjännitesähkö"
+    summarySheet['B4'] = "%s - %s"%(fromDate,toDate)
+    summarySheet['B5'] = "Perusmaksu"
+    summarySheet['B6'] = "Talvipäivänenergia"
+    summarySheet['B7'] = "Muun ajan energia"
+    summarySheet['B8'] = "Tehomaksu"
+    summarySheet['B9'] = "Loistehomaksu"
+    summarySheet['B10'] = "Energiavero"
+    summarySheet['B11'] = "Huoltovarmuusmaksu"
+
+    summarySheet['B13'] = "Oomi Aktiivinen"
+    summarySheet['B14'] = "%s - %s"%(fromDate,toDate)
+    summarySheet['B15'] = "Perusmaksu"
+    summarySheet['B16'] = "Spot-tuntihinta"
+    summarySheet['B17'] = "Marginaali"
+
+    #Column C-D
+    summarySheet['C2'] = "Määrä"
+    #Amount of months
+    summarySheet['C5'] = "-"
+    summarySheet['D5'] = "kk"
+    summarySheet['C6'] = data["totalEnergyWinter"]
+    summarySheet['D6'] = "kWh"
+    summarySheet['C7'] = data["totalEnergy"] - data["totalEnergyWinter"]
+    summarySheet['D7'] = "kWh"
+    summarySheet['C8'] = "-"
+    summarySheet['D8'] = "kW"
+    summarySheet['C9'] = "-"
+    summarySheet['D9'] = "kvar"
+    summarySheet['C10'] = data["totalEnergy"]
+    summarySheet['D10'] = "kWh"
+    summarySheet['C11'] = data["totalEnergy"]
+    summarySheet['D11'] = "kWh"
+
+    #Column E-F
+    summarySheet['E2'] = "Yksikköhinta"
+    summarySheet['E5'] = "-"
+    summarySheet['F5'] = "EUR/kk"
+    summarySheet['E6'] = transferPriceWinter
+    summarySheet['F6'] = "snt/kWh"
+    summarySheet['E7'] = transferPrice
+    summarySheet['F7'] = "snt/kWh"
+    summarySheet['E8'] = 1.72
+    summarySheet['F8'] = "€/kW"
+    summarySheet['E9'] = 1.6
+    summarySheet['F9'] = "€/kvar"
+    summarySheet['E10'] = energyTax
+    summarySheet['F10'] = "snt/kWh"
+    summarySheet['E11'] = huoltovarmuusmaksu
+    summarySheet['F11'] = "snt/kWh"
+
+    #Column G-H
+    summarySheet['G2'] = "ALV"
+    summarySheet['G5'] = "-"
+    summarySheet['H5'] = "€"
+    summarySheet['G6'] = "=((C6*E6)/100)*%s"%(vat-1)
+    summarySheet['H6'] = "€"
+    summarySheet['G7'] = "=((C7*E7)/100)*%s"%(vat-1)
+    summarySheet['H7'] = "€"
+    summarySheet['G8'] = tehoMaksu/124*24
+    summarySheet['H8'] = "€"
+    summarySheet['G9'] = loisTehoMaksu*vat/100
+    summarySheet['H9'] = "€"
+    summarySheet['G10'] = "=((C10*E10)/100)*%s"%(vat-1)
+    summarySheet['H10'] = "€"
+    summarySheet['G11'] = "=((C11*E11)/100)*%s"%(vat-1)
+    summarySheet['H11'] = "€"
+
+
+    #Column I-J
+    summarySheet['I2'] = "Yhteensä"
+    summarySheet['I5'] = "-"
+    summarySheet['J5'] = "€"
+    summarySheet['I6'] = "=C6*E6/100+G6"
+    summarySheet['J6'] = "€"
+    summarySheet['I7'] = "=C7*E7/100+G7"
+    summarySheet['J7'] = "€"
+    summarySheet['I8'] = tehoMaksu
+    summarySheet['J8'] = "€"
+    summarySheet['I9'] = loisTehoMaksu
+    summarySheet['J9'] = "€"
+    summarySheet['I10'] = "=C10*E10/100+G10"
+    summarySheet['J10'] = "€"
+    summarySheet['I11'] = "=C11*E11/100+G11"
+    summarySheet['J11'] = "€"
+
+
+    for chargerData in data["chargers"]:
+        chargerName = chargerData["Name"]
+        chargerSheet = wb.create_sheet(chargerName)
+        chargerSheet.cell(row=1, column=1, value="%s lataustiedot aikavälillä %s - %s"%(chargerName, fromDate, toDate))
+
+        chargerSheet.cell(row=3, column=3, value="Talvipäivä")
+        chargerSheet.cell(row=3, column=4, value="Muu aika")
+        chargerSheet.cell(row=4, column=1, value="Kokonaiskulutus:")
+        chargerSheet.cell(row=5, column=1, value="Keskihinta:")
+        chargerSheet.cell(row=6, column=1, value="hinta yhteensä:")
+
+        chargerSheet.cell(row=8, column=1, value="Latausjaksojen yhteenveto:")
+        header = ["jakso", "Aikaväli", "Kulutus (kWh)", "keskihinta (€/kWh)", "hinta (€)", "Kulutus talviaikana (kWh)", "Kulutus muuna aikana (kWh)","","","Aika","Kulutus","hinta"]
+        chargerSheet.append(header)
+
+    wb.save("Lasku %s - %s -uusi.xlsx"%(fromDate,toDate))
+
+
 def calculate_invoice():
     #Implement here invoice generation. Connect to entsoe and zaptec portal for data and calculate all eslected chargers invoice
     global fromDate
     global toDate
     global transferPrice
     global transferPriceWinter
+    global energyTax
     print (type(fromDate))
     print (fromDate)
     print (toDate)
@@ -537,29 +679,33 @@ def calculate_invoice():
     summarySheet.title = "Yhteenveto"
     summarySheet['A1'] = "Ajanjakso:"
     summarySheet['B1'] = "%s - %s"%(fromDate, toDate)
-    summarySheet["C2"] = "Talvipäivä (%s snt/kWh)"%transferPriceWinter
-    summarySheet["D2"] = "muu aika (%s snt/kWh)"%transferPrice
+    summarySheet["A3"] = "Siirtohinta"
+    summarySheet["C3"] = "Talvipäivä (%s snt/kWh)"%transferPriceWinter
+    summarySheet["D3"] = "muu aika (%s snt/kWh)"%transferPrice
+    summarySheet["E3"] = "Energiavero (%s snt/kWh)"%energyTax
 
-    summarySheet["A3"] = "Kokonaiskulutus (kWh):"
-    summarySheet["A4"] = "Pörssisähkön Keskihinta (€/kWh):"
-    summarySheet["A5"] = "Pörssisähkön Kokonaishinta (€):"
-    summarySheet["A6"] = "Siirtomaksu (€):"
+    summarySheet["A4"] = "Kokonaiskulutus (kWh):"
+    summarySheet["A5"] = "Pörssisähkön Keskihinta (€/kWh):"
+    summarySheet["A6"] = "Pörssisähkön Kokonaishinta (€):"
+    summarySheet["A7"] = "Siirtomaksu (€):"
 
-    summarySheet['A8'] = "Laturi"
-    summarySheet['B8'] = "Kokonaiskulutus (kWh)"
-    summarySheet['C8'] = "Keskihinta (€/kWh)"
-    summarySheet['D8'] = "Siirtohinta Talviaika (€)"
-    summarySheet['E8'] = "Siirtohinta muu aika (€)"
-    summarySheet['F8'] = "Marginaali (€)"
-    summarySheet['F8'] = "Energiavero (€)"
-    summarySheet['G8'] = "ALV (€)"
-    summarySheet['H8'] = "Kulutuksen hinta (€)"
-    summarySheet['H8'] = "Kiinteät kulut (€)"
-    summarySheet['H8'] = "Yhteensä (€)"
+    summarySheet['A9'] = "Laturi"
+    summarySheet['B9'] = "Kokonaiskulutus (kWh)"
+    summarySheet['C9'] = "Keskihinta (€/kWh)"
+    summarySheet['D9'] = "Siirtomaksu Talviaika (€)"
+    summarySheet['E9'] = "Siirtomaksu muu aika (€)"
+    summarySheet['F9'] = "Marginaali (€)"
+    summarySheet['F9'] = "Energiavero (€)"
+    summarySheet['G9'] = "ALV (€)"
+    summarySheet['H9'] = "Kulutuksen hinta (€)"
+    summarySheet['I9'] = "Kiinteät kulut (€)"
+    summarySheet['J9'] = "Yhteensä (€)"
 
-    totalEnergy = 0.0
-    totalEnergyWinter = 0.0
-    totalPrice = 0.0
+    excelData = {}
+    excelData["totalEnergy"] = 0.0
+    excelData["totalEnergyWinter"] = 0.0
+    excelData["totalPrice"] = 0.0
+    excelData["chargers"] = []
 
     chargerSheets= {}
     #Get all selected chargers
@@ -573,6 +719,9 @@ def calculate_invoice():
                 #Get charger id
                 for charger in zaptecApi.chargers["Data"]:
                     if charger["Name"] == chargerName:
+                        chargerData = {}
+                        chargerData["Name"] = chargerName
+                        excelData["chargers"].append(chargerData)
                         chargerIndex += 1
                         chargerId = charger["Id"]
                         #print(chargerId)
@@ -599,9 +748,10 @@ def calculate_invoice():
                             chargerSheets[chargerName].append(header)
 
                             sessioIndex = 0
-                            ChargerTotalEnergy = 0.0
-                            chargerTotalPrice = 0.0
-                            ChargerTotalEnergyWinter = 0.0
+                            chargerData["ChargerTotalEnergy"] = 0.0
+                            chargerData["chargerTotalPrice"] = 0.0
+                            chargerData["ChargerTotalEnergyWinter"] = 0.0
+                            chargerData["sessions"] = []
                             hourPriceTimeColumn = 10
                             hourPriceUsageColumn = 11
                             hourPriceColumn = 12
@@ -609,21 +759,28 @@ def calculate_invoice():
 
                             for session in chargerHistory["Data"]:
                                 sessioIndex += 1
+                                sessionData = {}
+                                chargerData["sessions"].append(sessionData)
 
-                                sessionTotalEnergy = float(session["Energy"])
-                                if sessionTotalEnergy == 0.0:
+                                sessionData["sessionTotalEnergy"] = float(session["Energy"])
+                                if sessionData["sessionTotalEnergy"] == 0.0:
                                     continue
 
                                 #This have to change as sesson can be in winter and non winter time
                                 #We need total energy and winter enrgy. Total energy includes also winter energy as it is calulated for spot price.abs
                                 #Winter eneggy is calculated only for transfer price
-                                ChargerTotalEnergy = ChargerTotalEnergy + sessionTotalEnergy
-                                totalEnergyFromHours = 0.0
-                                totalEnergyPriceFromHours = 0.0
-                                averagePriceForSessionEnergy = 0.0
-                                totalEnergyFromHoursWinter = 0.0
+                                #sessionTotal energy cannot be added to charger total energy as such as part of it might be out of time range
+                                #chargerData["ChargerTotalEnergy"] = chargerData["ChargerTotalEnergy"] + sessionData["sessionTotalEnergy"]
+                                sessionData["totalEnergyFromHours"] = 0.0
+                                sessionData["totalEnergyPriceFromHours"] = 0.0
+                                sessionData["averagePriceForSessionEnergy"] = 0.0
+                                sessionData["totalEnergyFromHoursWinter"] = 0.0
 
+                                sessionData["EnergyDetails"] = []
+                                sessionDataInTimeRange = 0.0
                                 for EnergyDetails in session["EnergyDetails"]:
+                                    energyDetailsData = {}
+                                    sessionData["EnergyDetails"].append(energyDetailsData)
                                     timestamp = EnergyDetails["Timestamp"]
                                     format_data = "%Y-%m-%dT%H:%M:%S.%f%z"
 
@@ -631,8 +788,12 @@ def calculate_invoice():
                                         daytime = datetime.strptime(timestamp, format_data)
                                     except:
                                         daytime = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S%z")
-
-                                    energy = float(EnergyDetails["Energy"])
+                                    #Zaptec and entsoe are in UTC but date time is in helsinki time zone
+                                    #daytime.astimezone(zoneinfo.ZoneInfo('Europe/Helsinki'))
+                                    #We need daytime to set current timezone that we can check it is between time limit
+                                    #But price have to take with utc timestamp
+                                    #print ("KSI: datetime: %s"%daytime.astimezone().isoformat())
+                                    #print ("KSI: datetime: %s"%daytime.isoformat())
 
                                     minutes = daytime.minute
                                     if minutes == 0 :
@@ -641,11 +802,28 @@ def calculate_invoice():
                                     #Charger session can be from one day to another day started before time period we are interesting
                                     #and ended after time period we are interesting
                                     #We have to check if time is in the time period we are interesting
-                                    if daytime.date() < fromDate or daytime.date() > toDate:
-                                        print("Time is not in the time period we are interesting: %s"%daytime)
+                                    if daytime.astimezone().date() < fromDate or daytime.astimezone().date() > toDate:
+                                        print("Time is not in the time period we are interesting: %s (localized: %s)"%(daytime, daytime.astimezone()))
                                         continue
 
-                                    price = float(entsoeApi.getPriceOfHour(daytime))
+                                    #Spend energy is in 15 minutes interval so we have to calculate the energy for one hour
+                                    #If there is already data for that hour we have to add the energy to that hour
+                                    hourString = "%s:00:00"%daytime.strftime("%Y-%m-%d %H")
+                                    price = entsoeApi.getPriceOfHour(daytime)
+                                    if "%s_price"%hourString in energyDetailsData:
+                                        energyDetailsData["%s_price"%hourString] = energyDetailsData["%s_price"%hourString] + price
+                                    else:
+                                        energyDetailsData["%s_price"%hourString] = price
+
+                                    #Spend energy is in 15 minutes interval so we have to calculate the energy for one hour
+                                    #If there is already data for that hour we have to add the energy to that hour
+
+                                    energy = float(EnergyDetails["Energy"])
+                                    if "%s_energy"%hourString in energyDetailsData:
+                                        energyDetailsData["%s_energy"%hourString] = energyDetailsData["%s_energy"%hourString] + energy
+                                    else:
+                                        energyDetailsData["%s_energy"%hourString] = energy
+                                    sessionDataInTimeRange = sessionDataInTimeRange + energy
 
                                     chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceTimeColumn, value=timestamp)
                                     chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceUsageColumn, value=energy)
@@ -656,43 +834,56 @@ def calculate_invoice():
                                     if isDateInWinterPriceTime(daytime) :
                                         print (daytime)
                                         print ("is on winter time")
-                                        totalEnergyFromHoursWinter = (totalEnergyFromHoursWinter + energy)
+                                        sessionData["totalEnergyFromHoursWinter"] = (sessionData["totalEnergyFromHoursWinter"] + energy)
                                     #else:
                                     #    print ("is not on winter time")
 
-                                    totalEnergyFromHours = (totalEnergyFromHours + energy)
-                                    totalEnergyPriceFromHours = totalEnergyPriceFromHours + (energy*price)
+                                    sessionData["totalEnergyFromHours"] = (sessionData["totalEnergyFromHours"] + energy)
+                                    sessionData["totalEnergyPriceFromHours"] = sessionData["totalEnergyPriceFromHours"] + (energy*price)
 
-                                if totalEnergyFromHours == 0:
-                                    averagePriceForSessionEnergy = 0
+                                #As session total energy might be partly over time range. That why we use session detail energy
+                                chargerData["ChargerTotalEnergy"] = chargerData["ChargerTotalEnergy"] + sessionDataInTimeRange
+
+                                #Make a check if session total energy and energy details energy match
+                                if round(sessionDataInTimeRange,3) != round(sessionData["sessionTotalEnergy"],3):
+                                    print ("Session total energy and details energy sum not match: %s versus %s"%(round(sessionData["sessionTotalEnergy"],3), round(sessionDataInTimeRange,3)))
+
+                                if sessionData["totalEnergyFromHours"] == 0:
+                                    sessionData["averagePriceForSessionEnergy"] = 0
                                 else:
-                                    averagePriceForSessionEnergy = totalEnergyPriceFromHours/totalEnergyFromHours
+                                    sessionData["averagePriceForSessionEnergy"] = sessionData["totalEnergyPriceFromHours"]/sessionData["totalEnergyFromHours"]
 
-                                chargerSheets[chargerName].append([sessioIndex, "%s - %s"%(session["StartDateTime"], session["EndDateTime"]), sessionTotalEnergy, averagePriceForSessionEnergy, (sessionTotalEnergy*averagePriceForSessionEnergy), totalEnergyFromHoursWinter, (totalEnergyFromHours - totalEnergyFromHoursWinter)])
-                                chargerTotalPrice = chargerTotalPrice + totalEnergyPriceFromHours
-                                ChargerTotalEnergyWinter = ChargerTotalEnergyWinter + totalEnergyFromHoursWinter
+                                chargerSheets[chargerName].append([sessioIndex, "%s - %s"%(session["StartDateTime"], session["EndDateTime"]), sessionData["sessionTotalEnergy"], sessionData["averagePriceForSessionEnergy"], (sessionData["sessionTotalEnergy"]*sessionData["averagePriceForSessionEnergy"]), sessionData["totalEnergyFromHoursWinter"], (sessionData["totalEnergyFromHours"] - sessionData["totalEnergyFromHoursWinter"])])
+                                chargerData["chargerTotalPrice"] = chargerData["chargerTotalPrice"] + sessionData["totalEnergyPriceFromHours"]
+                                chargerData["ChargerTotalEnergyWinter"] = chargerData["ChargerTotalEnergyWinter"] + sessionData["totalEnergyFromHoursWinter"]
 
-                            summaryRow=chargerIndex+8
+                            summaryRow=chargerIndex+9
                             #print("Summary row: %s"%summaryRow)
 
-                            totalEnergy = totalEnergy + ChargerTotalEnergy
-                            totalEnergyWinter = totalEnergyWinter + ChargerTotalEnergyWinter
-                            totalPrice = totalPrice + chargerTotalPrice
+                            excelData["totalEnergy"] = excelData["totalEnergy"] + chargerData["ChargerTotalEnergy"]
+                            excelData["totalEnergyWinter"] = excelData["totalEnergyWinter"] + chargerData["ChargerTotalEnergyWinter"]
+                            excelData["totalPrice"] = excelData["totalPrice"] + chargerData["chargerTotalPrice"]
                             if sessioIndex > 0:
 
-                                chargerSheets[chargerName].cell(row=4, column=2, value=ChargerTotalEnergy)
-                                chargerSheets[chargerName].cell(row=4, column=3, value=ChargerTotalEnergyWinter)
-                                chargerSheets[chargerName].cell(row=4, column=4, value=(ChargerTotalEnergy - ChargerTotalEnergyWinter))
-                                if ChargerTotalEnergy != 0 :
-                                    chargerSheets[chargerName].cell(row=5, column=2, value=(chargerTotalPrice/ChargerTotalEnergy))
-                                chargerSheets[chargerName].cell(row=6, column=2, value=chargerTotalPrice)
+                                chargerSheets[chargerName].cell(row=4, column=2, value=chargerData["ChargerTotalEnergy"])
+                                chargerSheets[chargerName].cell(row=4, column=3, value=chargerData["ChargerTotalEnergyWinter"])
+                                chargerSheets[chargerName].cell(row=4, column=4, value=(chargerData["ChargerTotalEnergy"] - chargerData["ChargerTotalEnergyWinter"]))
+                                if chargerData["ChargerTotalEnergy"] != 0 :
+                                    chargerSheets[chargerName].cell(row=5, column=2, value=(chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"]))
+                                chargerSheets[chargerName].cell(row=6, column=2, value=chargerData["chargerTotalPrice"])
 
 
                                 summarySheet.cell(row=summaryRow, column=1, value=chargerName)
-                                summarySheet.cell(row=summaryRow, column=2, value=ChargerTotalEnergy)
-                                if ChargerTotalEnergy != 0 :
-                                    summarySheet.cell(row=summaryRow, column=3, value=(chargerTotalPrice/ChargerTotalEnergy))
-                                summarySheet.cell(row=summaryRow, column=4, value=chargerTotalPrice)
+                                summarySheet.cell(row=summaryRow, column=2, value=chargerData["ChargerTotalEnergy"])
+                                if chargerData["ChargerTotalEnergy"] != 0 :
+                                    summarySheet.cell(row=summaryRow, column=3, value=(chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"]))
+                                #column 4 is transfer price winter time
+                                summarySheet.cell(row=summaryRow, column=4, value=chargerData["chargerTotalPrice"])
+                                #column 5 is transfer price other time
+                                #column 6 is energy tax
+                                #column 7 is VAT of all the price
+                                #column 8 is total price of energy
+
                             else:
                                 summarySheet.cell(row=summaryRow, column=1, value=chargerName)
                                 summarySheet.cell(row=summaryRow, column=2, value=0)
@@ -706,16 +897,22 @@ def calculate_invoice():
                             return False
 
 
-    summarySheet["B3"] = totalEnergy
-    summarySheet["C3"] = totalEnergyWinter
-    summarySheet["D3"] = (totalEnergy -totalEnergyWinter)
-    summarySheet["B4"] = totalPrice/totalEnergy
-    summarySheet["B5"] = totalPrice
-    summarySheet["C6"] = (totalEnergyWinter*transferPriceWinter)
-    summarySheet["D6"] = ((totalEnergy - totalEnergyWinter)*transferPrice)/100
+    summarySheet["B4"] = excelData["totalEnergy"]
+    summarySheet["C4"] = excelData["totalEnergyWinter"]
+    summarySheet["D4"] = (excelData["totalEnergy"] -excelData["totalEnergyWinter"])
+    #summarySheet["B5"] = excelData["totalPrice"]/excelData["totalEnergy"]
+    summarySheet["B5"] = "=B6/B4"
+    summarySheet["B6"] = excelData["totalPrice"]
+    summarySheet["C7"] = (excelData["totalEnergyWinter"]*transferPriceWinter)
+    summarySheet["D7"] = ((excelData["totalEnergy"] - excelData["totalEnergyWinter"])*transferPrice)/100
 
     wb.save("Lasku %s - %s.xlsx"%(fromDate,toDate))
     output_text.insert(tk.END, "Lasku %s - %s.xlsx luotu\n"%(fromDate,toDate))
+
+    generate_excel(excelData)
+
+    with open("excel.json", "w") as write_file:
+        json.dump(excelData, write_file, indent=4)
 
 def show_chargers():
     # implementation of the show_chargers function. It have to show all chargers as selectable list
