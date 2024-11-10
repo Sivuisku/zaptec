@@ -580,10 +580,17 @@ def generate_excel(data):
     summarySheet['D8'] = "kW"
     summarySheet['C9'] = "-"
     summarySheet['D9'] = "kvar"
-    summarySheet['C10'] = data["totalEnergy"]
+    summarySheet['C10'] = "=(C6+C7)"
     summarySheet['D10'] = "kWh"
-    summarySheet['C11'] = data["totalEnergy"]
+    summarySheet['C11'] = "=(C6+C7)"
     summarySheet['D11'] = "kWh"
+
+    summarySheet['C15'] = "-"
+    summarySheet['D15'] = "kk"
+    summarySheet['C16'] = "=(C6+C7)"
+    summarySheet['D16'] = "kWh"
+    summarySheet['C17'] = "=(C6+C7)"
+    summarySheet['D17'] = "kWh"
 
     #Column E-F
     summarySheet['E2'] = "Yksikköhinta"
@@ -602,6 +609,17 @@ def generate_excel(data):
     summarySheet['E11'] = huoltovarmuusmaksu
     summarySheet['F11'] = "snt/kWh"
 
+    summarySheet['E15'] = "-"
+    summarySheet['F15'] = "EUR/kk"
+    summarySheet['E16'] = "=(%s/C16)*100"%data["totalPrice"]
+    summarySheet['F16'] = "snt/kWh"
+    summarySheet['E17'] = margin
+    summarySheet['F17'] = "snt/kWh"
+
+    summarySheet['B19'] = "TotalPrice"
+    summarySheet['C19'] = data["totalPrice"]
+
+
     #Column G-H
     summarySheet['G2'] = "ALV"
     summarySheet['G5'] = "-"
@@ -618,6 +636,13 @@ def generate_excel(data):
     summarySheet['H10'] = "€"
     summarySheet['G11'] = "=((C11*E11)/100)*%s"%(vat-1)
     summarySheet['H11'] = "€"
+
+    summarySheet['G15'] = "-"
+    summarySheet['H15'] = "€"
+    summarySheet['G16'] = "=C16*E16/100*%s"%(vat-1)
+    summarySheet['H16'] = "€"
+    summarySheet['G17'] = "=C17*E17/100*%s"%(vat-1)
+    summarySheet['H17'] = "€"
 
 
     #Column I-J
@@ -637,7 +662,18 @@ def generate_excel(data):
     summarySheet['I11'] = "=C11*E11/100+G11"
     summarySheet['J11'] = "€"
 
+    summarySheet['I15'] = "-"
+    summarySheet['J15'] = "€"
+    summarySheet['I16'] = "=C16*E16/100+G16"
+    summarySheet['J16'] = "€"
+    summarySheet['I17'] = "=C17*E17/100+G17"
+    summarySheet['J17'] = "€"
 
+    summarySheet['B21'] = ""
+    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Yhteensä", "", "Siirtomaksu"]
+    summarySheet.append(chargerHeader)
+
+    scln=22
     for chargerData in data["chargers"]:
         chargerName = chargerData["Name"]
         chargerSheet = wb.create_sheet(chargerName)
@@ -652,6 +688,17 @@ def generate_excel(data):
         chargerSheet.cell(row=8, column=1, value="Latausjaksojen yhteenveto:")
         header = ["jakso", "Aikaväli", "Kulutus (kWh)", "keskihinta (€/kWh)", "hinta (€)", "Kulutus talviaikana (kWh)", "Kulutus muuna aikana (kWh)","","","Aika","Kulutus","hinta"]
         chargerSheet.append(header)
+        scln += 1
+        if chargerData["ChargerTotalEnergy"] == 0.0 :
+            summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", 0, "€"]
+            summarySheet.append(summaryLine)
+        else:
+            if chargerData["ChargerTotalEnergyWinter"] == 0.0:
+                transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+((C%s/C7)*I7)"%(scln,scln,scln)
+            else:
+                transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+((%s/C7)*I7)+((%s/C6)*I6)"%(scln,scln,(chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"])
+            summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+%s"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100,margin), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s"%(scln, scln, scln), "€", transferpricecell, "€"]
+            summarySheet.append(summaryLine)
 
     wb.save("Lasku %s - %s -uusi.xlsx"%(fromDate,toDate))
 
@@ -776,11 +823,13 @@ def calculate_invoice():
                                 sessionData["averagePriceForSessionEnergy"] = 0.0
                                 sessionData["totalEnergyFromHoursWinter"] = 0.0
 
-                                sessionData["EnergyDetails"] = []
+                                sessionData["EnergyDetails"] = {}
                                 sessionDataInTimeRange = 0.0
                                 for EnergyDetails in session["EnergyDetails"]:
-                                    energyDetailsData = {}
-                                    sessionData["EnergyDetails"].append(energyDetailsData)
+                                    energy = float(EnergyDetails["Energy"])
+                                    if energy == 0.0:
+                                        continue
+
                                     timestamp = EnergyDetails["Timestamp"]
                                     format_data = "%Y-%m-%dT%H:%M:%S.%f%z"
 
@@ -810,19 +859,20 @@ def calculate_invoice():
                                     #If there is already data for that hour we have to add the energy to that hour
                                     hourString = "%s:00:00"%daytime.strftime("%Y-%m-%d %H")
                                     price = entsoeApi.getPriceOfHour(daytime)
-                                    if "%s_price"%hourString in energyDetailsData:
-                                        energyDetailsData["%s_price"%hourString] = energyDetailsData["%s_price"%hourString] + price
-                                    else:
-                                        energyDetailsData["%s_price"%hourString] = price
 
-                                    #Spend energy is in 15 minutes interval so we have to calculate the energy for one hour
-                                    #If there is already data for that hour we have to add the energy to that hour
 
-                                    energy = float(EnergyDetails["Energy"])
-                                    if "%s_energy"%hourString in energyDetailsData:
-                                        energyDetailsData["%s_energy"%hourString] = energyDetailsData["%s_energy"%hourString] + energy
+                                    if hourString in sessionData["EnergyDetails"]:
+                                        #price should be same for whole hour
+                                        if sessionData["EnergyDetails"][hourString]["price"] != price:
+                                            print ("Price is not same for whole hour: %s versus %s"%(sessionData["EnergyDetails"][hourString]["price"], price))
+
+                                        sessionData["EnergyDetails"][hourString]["energy"] += energy
                                     else:
-                                        energyDetailsData["%s_energy"%hourString] = energy
+                                        sessionData["EnergyDetails"][hourString] = {}
+                                        sessionData["EnergyDetails"][hourString]["price"] = price
+                                        sessionData["EnergyDetails"][hourString]["energy"] = energy
+
+
                                     sessionDataInTimeRange = sessionDataInTimeRange + energy
 
                                     chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceTimeColumn, value=timestamp)
