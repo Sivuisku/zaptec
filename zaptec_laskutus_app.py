@@ -364,7 +364,7 @@ def billInfo():
     global loisTehoMaksu
     global basePrice
 
-    basePriceTransferLabel = ttk.Label(billInfo_window, text="Liittymän (€) sisältää ALV:n")
+    basePriceTransferLabel = ttk.Label(billInfo_window, text="Liittymän perusmaksu (€) sisältää ALV:n")
     basePriceTransferLabel.pack()
     basePriceTransferEntry = ttk.Entry(billInfo_window)
     basePriceTransferEntry.delete(0, tk.END)
@@ -543,7 +543,9 @@ def generate_excel(data):
     global vat
     global tehoMaksu
     global loisTehoMaksu
-    huoltovarmuusmaksu = 0.01
+    global huoltovarmuusmaksu
+    global basePrice
+    global basePriceTransfer
 
     wb = openpyxl.Workbook()
     summarySheet = wb.active
@@ -570,22 +572,22 @@ def generate_excel(data):
     #Column C-D
     summarySheet['C2'] = "Määrä"
     #Amount of months
-    summarySheet['C5'] = "-"
+    summarySheet['C5'] = ""
     summarySheet['D5'] = "kk"
     summarySheet['C6'] = data["totalEnergyWinter"]
     summarySheet['D6'] = "kWh"
     summarySheet['C7'] = data["totalEnergy"] - data["totalEnergyWinter"]
     summarySheet['D7'] = "kWh"
-    summarySheet['C8'] = "-"
+    summarySheet['C8'] = ""
     summarySheet['D8'] = "kW"
-    summarySheet['C9'] = "-"
+    summarySheet['C9'] = ""
     summarySheet['D9'] = "kvar"
     summarySheet['C10'] = "=(C6+C7)"
     summarySheet['D10'] = "kWh"
     summarySheet['C11'] = "=(C6+C7)"
     summarySheet['D11'] = "kWh"
 
-    summarySheet['C15'] = "-"
+    summarySheet['C15'] = ""
     summarySheet['D15'] = "kk"
     summarySheet['C16'] = "=(C6+C7)"
     summarySheet['D16'] = "kWh"
@@ -594,7 +596,7 @@ def generate_excel(data):
 
     #Column E-F
     summarySheet['E2'] = "Yksikköhinta"
-    summarySheet['E5'] = "-"
+    summarySheet['E5'] = ""
     summarySheet['F5'] = "EUR/kk"
     summarySheet['E6'] = transferPriceWinter
     summarySheet['F6'] = "snt/kWh"
@@ -609,20 +611,20 @@ def generate_excel(data):
     summarySheet['E11'] = huoltovarmuusmaksu
     summarySheet['F11'] = "snt/kWh"
 
-    summarySheet['E15'] = "-"
+    summarySheet['E15'] = ""
     summarySheet['F15'] = "EUR/kk"
-    summarySheet['E16'] = "=(%s/C16)*100"%data["totalPrice"]
+    summarySheet['E16'] = (data["totalPrice"]/data["totalEnergy"])*100
     summarySheet['F16'] = "snt/kWh"
     summarySheet['E17'] = margin
     summarySheet['F17'] = "snt/kWh"
 
-    summarySheet['B19'] = "TotalPrice"
-    summarySheet['C19'] = data["totalPrice"]
+    #summarySheet['B19'] = "TotalPrice"
+    #summarySheet['C19'] = data["totalPrice"]
 
 
     #Column G-H
     summarySheet['G2'] = "ALV"
-    summarySheet['G5'] = "-"
+    summarySheet['G5'] = ""
     summarySheet['H5'] = "€"
     summarySheet['G6'] = "=((C6*E6)/100)*%s"%(vat-1)
     summarySheet['H6'] = "€"
@@ -637,7 +639,7 @@ def generate_excel(data):
     summarySheet['G11'] = "=((C11*E11)/100)*%s"%(vat-1)
     summarySheet['H11'] = "€"
 
-    summarySheet['G15'] = "-"
+    summarySheet['G15'] = ""
     summarySheet['H15'] = "€"
     summarySheet['G16'] = "=C16*E16/100*%s"%(vat-1)
     summarySheet['H16'] = "€"
@@ -647,7 +649,7 @@ def generate_excel(data):
 
     #Column I-J
     summarySheet['I2'] = "Yhteensä"
-    summarySheet['I5'] = "-"
+    summarySheet['I5'] = basePrice
     summarySheet['J5'] = "€"
     summarySheet['I6'] = "=C6*E6/100+G6"
     summarySheet['J6'] = "€"
@@ -662,7 +664,7 @@ def generate_excel(data):
     summarySheet['I11'] = "=C11*E11/100+G11"
     summarySheet['J11'] = "€"
 
-    summarySheet['I15'] = "-"
+    summarySheet['I15'] = basePriceTransfer
     summarySheet['J15'] = "€"
     summarySheet['I16'] = "=C16*E16/100+G16"
     summarySheet['J16'] = "€"
@@ -670,7 +672,7 @@ def generate_excel(data):
     summarySheet['J17'] = "€"
 
     summarySheet['B21'] = ""
-    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Yhteensä", "", "Siirtomaksu"]
+    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Yhteensä", "", "Siirtomaksu*","","*Siirtomaksu lasketaan laskemalla huoltovarmuusmaksu, energiavero, talviajan ja muun ajan kuklutus jaettuna AP:n kulutuksen mukaan."]
     summarySheet.append(chargerHeader)
 
     scln=22
@@ -685,20 +687,41 @@ def generate_excel(data):
         chargerSheet.cell(row=5, column=1, value="Keskihinta:")
         chargerSheet.cell(row=6, column=1, value="hinta yhteensä:")
 
+        chargerSheet["B4"] = chargerData["ChargerTotalEnergy"]
+        chargerSheet["C4"] = chargerData["ChargerTotalEnergyWinter"]
+        chargerSheet["D4"] = chargerData["ChargerTotalEnergy"] - chargerData["ChargerTotalEnergyWinter"]
+        chargerSheet["B5"] = "=B6/B4"
+        chargerSheet["B6"] = chargerData["chargerTotalPrice"]
+
         chargerSheet.cell(row=8, column=1, value="Latausjaksojen yhteenveto:")
-        header = ["jakso", "Aikaväli", "Kulutus (kWh)", "keskihinta (€/kWh)", "hinta (€)", "Kulutus talviaikana (kWh)", "Kulutus muuna aikana (kWh)","","","Aika","Kulutus","hinta"]
+        header = ["jakso", "Aikaväli", "Kulutus (kWh)", "keskihinta (€/kWh)", "hinta (€)", "talviaika"]
         chargerSheet.append(header)
         scln += 1
         if chargerData["ChargerTotalEnergy"] == 0.0 :
             summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", 0, "€"]
             summarySheet.append(summaryLine)
         else:
-            if chargerData["ChargerTotalEnergyWinter"] == 0.0:
-                transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+((C%s/C7)*I7)"%(scln,scln,scln)
-            else:
-                transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+((%s/C7)*I7)+((%s/C6)*I6)"%(scln,scln,(chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"])
+            transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+IF(C7=0,0,(C%s/C7)*I7)+IF(C6=0,0,(C%s/C6)*I6)"%(scln,scln,scln,scln)
             summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+%s"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100,margin), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s"%(scln, scln, scln), "€", transferpricecell, "€"]
+            print(summaryLine)
             summarySheet.append(summaryLine)
+
+        sessionIndex=0
+        for session in chargerData["sessions"]:
+            if session["sessionTotalEnergy"] == 0.0:
+                continue
+            sessionIndex += 1
+            #print("Charger name: %s, session Index: %s"%(chargerName, sessionIndex))
+            #print(session)
+            for key, value in session["EnergyDetails"].items():
+                line = ["",key,value["energy"],"",value["price"],]
+                chargerSheet.append(line)
+            if session["totalEnergyFromHours"] != 0.0:
+                averageprice = session["totalEnergyPriceFromHours"]/session["totalEnergyFromHours"]
+            else:
+                averageprice = 0.0
+            line = [sessionIndex, "Aikaväli tähän", session["totalEnergyFromHours"], averageprice, session["totalEnergyPriceFromHours"]]
+            chargerSheet.append(line)
 
     wb.save("Lasku %s - %s -uusi.xlsx"%(fromDate,toDate))
 
@@ -909,10 +932,10 @@ def calculate_invoice():
 
                             summaryRow=chargerIndex+9
                             #print("Summary row: %s"%summaryRow)
-
                             excelData["totalEnergy"] = excelData["totalEnergy"] + chargerData["ChargerTotalEnergy"]
                             excelData["totalEnergyWinter"] = excelData["totalEnergyWinter"] + chargerData["ChargerTotalEnergyWinter"]
                             excelData["totalPrice"] = excelData["totalPrice"] + chargerData["chargerTotalPrice"]
+
                             if sessioIndex > 0:
 
                                 chargerSheets[chargerName].cell(row=4, column=2, value=chargerData["ChargerTotalEnergy"])
