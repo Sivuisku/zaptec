@@ -136,19 +136,68 @@ class entsoe:
         self.dayahead_dict = {}
         self.output = None
         self.prices_dict = {}
+        self.prices_dict["time_ranges"] = []
 
+    def isPricesAlreadyAvailable(self,startimestring,endTimeString):
+        print("startimestring: "+startimestring)
+        origStartTime = datetime.strptime(startimestring,"%Y%m%d%H%M")
+        print("origStartTime: ")
+        print(origStartTime)
+        origEndTime = datetime.strptime(endTimeString,"%Y%m%d%H%M")
+        print("origEndTime: ")
+        print(origEndTime)
+        if len(self.prices_dict["time_ranges"]) > 0:
+            for range in self.prices_dict["time_ranges"]:
+                rangeStartTime = datetime.strptime(range["startTime"],"%Y%m%d%H%M")
+                print("rangeStartTime: ")
+                print(rangeStartTime)
+                rangeEndTime = datetime.strptime(range["endTime"],"%Y%m%d%H%M")
+                print("rangeEndTime: ")
+                print(rangeEndTime)
+                if rangeStartTime < origStartTime and rangeEndTime > origEndTime:
+                    print ("Match between range. No need to fetch data again")
+                    return True
+            return False
+        else:
+            return False
 
     def getDayAheadData(self,startTime, endTime):
 
-        #Entsoe returns always UTC time. Start time and end time are in correct time zone.
-        #Move starttime one day before in entsoe request
+        #First check if already available prices data in json file entsoe_price_data.json
+        if os.path.exists("entsoe_price_data.json"):
+            with open("entsoe_price_data.json", "r") as file:
+                self.prices_dict = json.load(file)
+
+        #Entsoe returns always UTC time. Start time and end time are correct time zone.
+        #Move start time one day before in entsoe request
+        #There is a limitation in entsoe that only 100 days is returned at ones. If time series longer, lets request in parts
         startimestring = "%s0000"%(startTime-timedelta(days=1)).strftime("%Y%m%d")
         endTimeString = "%s0000"%endTime.strftime("%Y%m%d")
-        #If file exist read it
-        if os.path.exists("entsoe_%s_%s.json" % (startimestring, endTimeString)):
-            with open("entsoe_%s_%s.json" % (startimestring, endTimeString), "r") as file:
-                self.dayahead_dict = json.load(file)
+        delta = endTime - startTime
+        queryParts = []
+        if delta.days >= 100:
+            print ("More than 100 days (%s). Query in parts"%delta.days)
+            while delta.days >= 100:
+                stepTimeEnd = startTime+timedelta(days=99)
+                stepTimeString = "%s0000"%stepTimeEnd.strftime("%Y%m%d")
+                queryParts.append(dict(startTime=startimestring, endTime=stepTimeString))
+                delta = endTime - stepTimeEnd
+                startTime = stepTimeEnd
+            #Now add rest less than 100 days
+            startimestring = "%s0000"%startTime.strftime("%Y%m%d")
+            queryParts.append(dict(startTime=startimestring, endTime=endTimeString))
         else:
+            queryParts.append(dict(startTime=startimestring, endTime=endTimeString))
+
+
+        #loop queryParts list
+        print ("Loop queryParts: ")
+        print (queryParts)
+        for timerange in queryParts:
+            startimestring = timerange["startTime"]
+            endtimestring = timerange["endTime"]
+            if self.isPricesAlreadyAvailable(startimestring, endtimestring):
+                continue
             url = self.dayahead_url % (self.apikey, startimestring, endTimeString)
             headers = {}
             print ("url: %s"%url)
@@ -158,7 +207,6 @@ class entsoe:
                 self.dayahead_dict = xmltodict.parse(response.text)
 
                 print ("Write the json data to output")
-                # json file
                 with open("entsoe_%s_%s.json" % (startimestring, endTimeString), "w") as write_file:
                     json.dump(self.dayahead_dict, write_file, indent=4)
             else:
@@ -166,59 +214,77 @@ class entsoe:
                 return response
 
 
-        print("Start price time dict handling")
+            print("Start price time dict handling")
+            if isinstance(self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"], list):
+                print("For some reason some times entsoe returns different kind xml/json files")
+                print("Now TimeSeries are list of periods")
+                for TimeSeries in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"] :
+                    periodStartTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["start"])
+                    periodEndTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["end"])
+                    #print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
 
-        if isinstance(self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"], list):
-            print("For some reason some times entsoe returns different kind xml/json files")
-            print("Now TimeSeries are list of periods")
-            for TimeSeries in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"] :
-                periodStartTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["start"])
-                periodEndTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["end"])
-                print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
+                    for point in TimeSeries["Period"]["Point"] :
+                        positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
+                        #print ("%s"%positiontime.strftime("%Y%m%d%H"))
+                        #print ("Price: %s Euros / MWH"%point["price.amount"])
+                        self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
+            else:
+                print("For some reason some times entsoe returns different kind xml/json files")
+                print("Now in TimeSeries there is period dictionary")
 
-                for point in TimeSeries["Period"]["Point"] :
-                    positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
-                    #print ("%s"%positiontime.strftime("%Y%m%d%H"))
-                    #print ("Price: %s Euros / MWH"%point["price.amount"])
-                    self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
-        else:
-            print("For some reason some times entsoe returns different kind xml/json files")
-            print("Now in TimeSeries there is period dictionary")
+                for period in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"]["Period"] :
+                    periodStartTime = datetime.fromisoformat(period["timeInterval"]["start"])
+                    periodEndTime = datetime.fromisoformat(period["timeInterval"]["end"])
+                    #print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
 
-            for period in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"]["Period"] :
-                periodStartTime = datetime.fromisoformat(period["timeInterval"]["start"])
-                periodEndTime = datetime.fromisoformat(period["timeInterval"]["end"])
-                print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
+                    for point in period["Point"] :
+                        positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
+                        #print ("%s"%positiontime.strftime("%Y%m%d%H"))
+                        #print ("Price: %s Euros / MWH"%point["price.amount"])
+                        self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
 
-                for point in period["Point"] :
-                    positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
-                    #print ("%s"%positiontime.strftime("%Y%m%d%H"))
-                    #print ("Price: %s Euros / MWH"%point["price.amount"])
-                    self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
-
+            self.prices_dict["time_ranges"].append(dict(startTime=startimestring, endTime=endTimeString))
         print("Price dict handled")
         #print(self.prices_dict)
+        with open("entsoe_price_data.json", "w") as write_file:
+            json.dump(self.prices_dict, write_file, indent=4)
+
         return True
 
     def getPriceOfHour(self, date):
-        #print("getPriceOfHour for %s %s"%(date.strftime("%Y%m%d%H"), hour))
-        #global vat
+        #Entsoe returns only first price if there is same price in many hours E.g. in following case price is -0.01 for hours from position 2 to position 7
+            #"Point": [
+            #            {
+            #                "position": "1",
+            #                "price.amount": "0"
+            #            },
+            #            {
+            #                "position": "2",
+            #                "price.amount": "-0.01"
+            #            },
+            #            {
+            #                "position": "8",
+            #                "price.amount": "0.47"
+            #            },
+            #            {
+            #                "position": "9",
+            #                "price.amount": "0.89"
+            #            },
+        #So we have to check that there is price information fot hour. If not then check first hour before where it is and use that price
         try:
-            return (self.prices_dict[date.strftime("%Y%m%d%H")])
-        except KeyError:
+            if date.strftime("%Y%m%d%H") in self.prices_dict:
+                return (self.prices_dict[date.strftime("%Y%m%d%H")])
+            else:
+                #Loop max 10 times to find price
+                for i in range(1,10):
+                    dateMinusI = date - timedelta(hours=i)
+                    if dateMinusI.strftime("%Y%m%d%H") in self.prices_dict:
+                        return (self.prices_dict[dateMinusI.strftime("%Y%m%d%H")])
+        except Exception as e:
+            print(f"An error occurred: {e}")
             print("For some reason entsoe api not have given any price data for %s"%date.strftime("%Y%m%d%H"))
-            print("Try to use first one hour before and then one hour after if not found")
-            dateMinusOneH = date - timedelta(hours=1)
-            try:
-                return (self.prices_dict[dateMinusOneH.strftime("%Y%m%d%H")])
-            except KeyError:
-                print("No match one hour before. Try one hour after")
-                datePlusOneH = date + timedelta(hours=1)
-                try:
-                    return (self.prices_dict[datePlusOneH.strftime("%Y%m%d%H")])
-                except KeyError:
-                    print("No found hour before or hour after. No can do. Exit 1")
-                    print(self.prices_dict)
+            print("It is tryed to loop 10 times prices before and not found")
+            return 0.0
 
 
 
@@ -557,6 +623,7 @@ def generate_excel(data):
     summarySheet['B4'] = "%s - %s"%(fromDate,toDate)
     summarySheet['B5'] = "Perusmaksu"
     summarySheet['B6'] = "Talvipäivänenergia"
+    summarySheet['N6'] = "Talvipäivänenergia on ajalta 1.11 - 31.3 kello 07:00 - 22:00"
     summarySheet['B7'] = "Muun ajan energia"
     summarySheet['B8'] = "Tehomaksu"
     summarySheet['B9'] = "Loistehomaksu"
@@ -672,10 +739,12 @@ def generate_excel(data):
     summarySheet['J17'] = "€"
 
     summarySheet['B21'] = ""
-    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Yhteensä", "", "Siirtomaksu*","","*Siirtomaksu lasketaan laskemalla huoltovarmuusmaksu, energiavero, talviajan ja muun ajan kuklutus jaettuna AP:n kulutuksen mukaan."]
+    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Kulutus yht.", "", "Siirtomaksu*","","Kaikki yht.","","*Siirtomaksu lasketaan laskemalla huoltovarmuusmaksu, energiavero, talviajan ja muun ajan kuklutus jaettuna AP:n kulutuksen mukaan. Lisäksi siihen tulee kuukausimaksut jaettuna aktiivisten käyttäjien mukaan"]
     summarySheet.append(chargerHeader)
 
     scln=22
+    firstChargerLine=scln+1
+    lastChargerLine=scln+len(data["chargers"])
     for chargerData in data["chargers"]:
         chargerName = chargerData["Name"]
         chargerSheet = wb.create_sheet(chargerName)
@@ -683,30 +752,30 @@ def generate_excel(data):
 
         chargerSheet.cell(row=3, column=3, value="Talvipäivä")
         chargerSheet.cell(row=3, column=4, value="Muu aika")
-        chargerSheet.cell(row=4, column=1, value="Kokonaiskulutus:")
-        chargerSheet.cell(row=5, column=1, value="Keskihinta:")
+        chargerSheet.cell(row=4, column=1, value="Kokonaiskulutus (Kwh):")
+        chargerSheet.cell(row=5, column=1, value="Keskihinta ():")
         chargerSheet.cell(row=6, column=1, value="hinta yhteensä:")
 
         chargerSheet["B4"] = chargerData["ChargerTotalEnergy"]
         chargerSheet["C4"] = chargerData["ChargerTotalEnergyWinter"]
-        chargerSheet["D4"] = chargerData["ChargerTotalEnergy"] - chargerData["ChargerTotalEnergyWinter"]
+        chargerSheet["D4"] = "=B4-C4"
         chargerSheet["B5"] = "=B6/B4"
         chargerSheet["B6"] = chargerData["chargerTotalPrice"]
 
         chargerSheet.cell(row=8, column=1, value="Latausjaksojen yhteenveto:")
-        header = ["jakso", "Aikaväli", "Kulutus (kWh)", "keskihinta (€/kWh)", "hinta (€)", "talviaika"]
+        header = ["Tunti", "Kulutus (kWh)", "hinta (€/kWh)", "hinta (€)"]
         chargerSheet.append(header)
         scln += 1
         if chargerData["ChargerTotalEnergy"] == 0.0 :
-            summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", 0, "€"]
+            summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", 0, "€",0,"€"]
             summarySheet.append(summaryLine)
         else:
-            transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+IF(C7=0,0,(C%s/C7)*I7)+IF(C6=0,0,(C%s/C6)*I6)"%(scln,scln,scln,scln)
-            summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+%s"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100,margin), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s"%(scln, scln, scln), "€", transferpricecell, "€"]
-            print(summaryLine)
+            transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+IF(C7=0,0,(C%s/C7)*I7)+IF(C6=0,0,(C%s/C6)*I6)+IF(I5=0,0,I5/COUNTIF(C%s:C%s,\">0\"))+IF(I15=0,0,I15/COUNTIF(C%s:C%s,\">0\"))"%(scln,scln,scln,scln,firstChargerLine,lastChargerLine,firstChargerLine,lastChargerLine)
+            summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+E17"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s"%(scln, scln, scln), "€", transferpricecell, "€","=I%s+K%s"%(scln,scln),"€"]
             summarySheet.append(summaryLine)
 
         sessionIndex=0
+        linenumber=10
         for session in chargerData["sessions"]:
             if session["sessionTotalEnergy"] == 0.0:
                 continue
@@ -714,14 +783,15 @@ def generate_excel(data):
             #print("Charger name: %s, session Index: %s"%(chargerName, sessionIndex))
             #print(session)
             for key, value in session["EnergyDetails"].items():
-                line = ["",key,value["energy"],"",value["price"],]
+                line = [key,value["energy"],value["price"],"=B%s*C%s"%(linenumber,linenumber)]
                 chargerSheet.append(line)
+                linenumber = linenumber+1
             if session["totalEnergyFromHours"] != 0.0:
                 averageprice = session["totalEnergyPriceFromHours"]/session["totalEnergyFromHours"]
             else:
                 averageprice = 0.0
-            line = [sessionIndex, "Aikaväli tähän", session["totalEnergyFromHours"], averageprice, session["totalEnergyPriceFromHours"]]
-            chargerSheet.append(line)
+            #line = ["Yhteensä", session["totalEnergyFromHours"], averageprice, session["totalEnergyPriceFromHours"]]
+            #chargerSheet.append(line)
 
     wb.save("Lasku %s - %s -uusi.xlsx"%(fromDate,toDate))
 
@@ -848,6 +918,12 @@ def calculate_invoice():
 
                                 sessionData["EnergyDetails"] = {}
                                 sessionDataInTimeRange = 0.0
+                                #If very short connection time there is no any session data even energy is used.abs
+                                # Create own EnergyDetails part.
+                                if not "EnergyDetails" in session:
+                                    session["EnergyDetails"] = []
+                                    session["EnergyDetails"].append(dict(Timestamp="%s+00:00"%session["StartDateTime"], Energy=session["Energy"]))
+
                                 for EnergyDetails in session["EnergyDetails"]:
                                     energy = float(EnergyDetails["Energy"])
                                     if energy == 0.0:
@@ -905,8 +981,8 @@ def calculate_invoice():
 
                                     #Check if time is in winter price time
                                     if isDateInWinterPriceTime(daytime) :
-                                        print (daytime)
-                                        print ("is on winter time")
+                                        #print (daytime)
+                                        #print ("is on winter time")
                                         sessionData["totalEnergyFromHoursWinter"] = (sessionData["totalEnergyFromHoursWinter"] + energy)
                                     #else:
                                     #    print ("is not on winter time")
