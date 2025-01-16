@@ -121,8 +121,8 @@ class zaptec:
                 self.chargerHistories[chargerName] = response.json()
                 self.output.insert(tk.END, "Laturitiedot haettu onnistuneesti\n")
                 #For debugging
-                with open(fileName, "w") as write_file:
-                    json.dump(self.chargerHistories[chargerName], write_file, indent=4)
+                #with open(fileName, "w") as write_file:
+                #    json.dump(self.chargerHistories[chargerName], write_file, indent=4)
 
                 return True
             else:
@@ -171,34 +171,42 @@ class entsoe:
         #Entsoe returns always UTC time. Start time and end time are correct time zone.
         #Move start time one day before in entsoe request
         #There is a limitation in entsoe that only 100 days is returned at ones. If time series longer, lets request in parts
-        startimestring = "%s0000"%(startTime-timedelta(days=1)).strftime("%Y%m%d")
-        endTimeString = "%s0000"%endTime.strftime("%Y%m%d")
+        totalRangeStarTimestring = "%s0000"%(startTime-timedelta(days=1)).strftime("%Y%m%d")
+        totalEndTimeString = "%s0000"%endTime.strftime("%Y%m%d")
         delta = endTime - startTime
         queryParts = []
         if delta.days >= 100:
             print ("More than 100 days (%s). Query in parts"%delta.days)
+            #First startTime
+            startimestring = totalRangeStarTimestring
             while delta.days >= 100:
                 stepTimeEnd = startTime+timedelta(days=99)
-                stepTimeString = "%s0000"%stepTimeEnd.strftime("%Y%m%d")
-                queryParts.append(dict(startTime=startimestring, endTime=stepTimeString))
+                stepTimeEndString = "%s0000"%stepTimeEnd.strftime("%Y%m%d")
+                print("KSi debug: Add dictionary to queryparts: %s - %s"%(startimestring, stepTimeEndString))
+                queryParts.append(dict(startTime=startimestring, endTime=stepTimeEndString))
                 delta = endTime - stepTimeEnd
                 startTime = stepTimeEnd
+                startimestring = "%s0000"%startTime.strftime("%Y%m%d")
             #Now add rest less than 100 days
-            startimestring = "%s0000"%startTime.strftime("%Y%m%d")
-            queryParts.append(dict(startTime=startimestring, endTime=endTimeString))
+            #startimestring = "%s0000"%startTime.strftime("%Y%m%d")
+            print("KSi debug2: Add dictionary to queryparts: %s - %s"%(startimestring, totalEndTimeString))
+            queryParts.append(dict(startTime=startimestring, endTime=totalEndTimeString))
         else:
-            queryParts.append(dict(startTime=startimestring, endTime=endTimeString))
+            queryParts.append(dict(startTime=totalRangeStarTimestring, endTime=totalEndTimeString))
 
 
         #loop queryParts list
         print ("Loop queryParts: ")
         print (queryParts)
         for timerange in queryParts:
-            startimestring = timerange["startTime"]
-            endtimestring = timerange["endTime"]
-            if self.isPricesAlreadyAvailable(startimestring, endtimestring):
+            print ("Handle range:")
+            print (timerange)
+            rangeStartimestring = timerange["startTime"]
+            rangeEndtimestring = timerange["endTime"]
+            if self.isPricesAlreadyAvailable(rangeStartimestring, rangeEndtimestring):
+                print("Price range already in price data. skip")
                 continue
-            url = self.dayahead_url % (self.apikey, startimestring, endTimeString)
+            url = self.dayahead_url % (self.apikey, rangeStartimestring, rangeEndtimestring)
             headers = {}
             print ("url: %s"%url)
             response = requests.request("GET", url, headers=headers)
@@ -207,7 +215,7 @@ class entsoe:
                 self.dayahead_dict = xmltodict.parse(response.text)
 
                 print ("Write the json data to output")
-                with open("entsoe_%s_%s.json" % (startimestring, endTimeString), "w") as write_file:
+                with open("entsoe_%s_%s.json" % (rangeStartimestring, rangeEndtimestring), "w") as write_file:
                     json.dump(self.dayahead_dict, write_file, indent=4)
             else:
                 showerror(title='Entsoe portal error', message="Request failed with status code %s and reason: %s\n"%(response.status_code, response.reason))
@@ -216,8 +224,8 @@ class entsoe:
 
             print("Start price time dict handling")
             if isinstance(self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"], list):
-                print("For some reason some times entsoe returns different kind xml/json files")
-                print("Now TimeSeries are list of periods")
+                print("  For some reason some times entsoe returns different kind xml/json files")
+                print("      Now TimeSeries are list of periods")
                 for TimeSeries in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"] :
                     periodStartTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["start"])
                     periodEndTime = datetime.fromisoformat(TimeSeries["Period"]["timeInterval"]["end"])
@@ -229,21 +237,22 @@ class entsoe:
                         #print ("Price: %s Euros / MWH"%point["price.amount"])
                         self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
             else:
-                print("For some reason some times entsoe returns different kind xml/json files")
-                print("Now in TimeSeries there is period dictionary")
+                print("  For some reason some times entsoe returns different kind xml/json files")
+                print("     Now in TimeSeries there is period dictionary")
 
-                for period in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"]["Period"] :
-                    periodStartTime = datetime.fromisoformat(period["timeInterval"]["start"])
-                    periodEndTime = datetime.fromisoformat(period["timeInterval"]["end"])
-                    #print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
+                #for period in self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"]["Period"] :
+                period = self.dayahead_dict["Publication_MarketDocument"]["TimeSeries"]["Period"]
+                periodStartTime = datetime.fromisoformat(period["timeInterval"]["start"])
+                periodEndTime = datetime.fromisoformat(period["timeInterval"]["end"])
+                #print("Get time from period from %s to %s"%(periodStartTime, periodEndTime))
 
-                    for point in period["Point"] :
-                        positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
-                        #print ("%s"%positiontime.strftime("%Y%m%d%H"))
-                        #print ("Price: %s Euros / MWH"%point["price.amount"])
-                        self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
+                for point in period["Point"] :
+                    positiontime = periodStartTime + timedelta(hours=int(int(point["position"])-1))
+                    #print ("%s"%positiontime.strftime("%Y%m%d%H"))
+                    #print ("Price: %s Euros / MWH"%point["price.amount"])
+                    self.prices_dict[positiontime.strftime("%Y%m%d%H")] = float(point["price.amount"])/1000
 
-            self.prices_dict["time_ranges"].append(dict(startTime=startimestring, endTime=endTimeString))
+            self.prices_dict["time_ranges"].append(dict(startTime=rangeStartimestring, endTime=rangeEndtimestring))
         print("Price dict handled")
         #print(self.prices_dict)
         with open("entsoe_price_data.json", "w") as write_file:
@@ -307,7 +316,7 @@ fromDate = date.fromisoformat('2024-07-01')
 toDate = date.fromisoformat('2024-07-31')
 
 #Billing info
-vat = 1.24
+vat = 1.255
 transferPrice = 0.92
 transferPriceWinter = 1.31
 margin = 0.49
@@ -664,7 +673,7 @@ def generate_excel(data):
     #Column E-F
     summarySheet['E2'] = "Yksikköhinta"
     summarySheet['E5'] = ""
-    summarySheet['F5'] = "EUR/kk"
+    summarySheet['F5'] = "€/kk"
     summarySheet['E6'] = transferPriceWinter
     summarySheet['F6'] = "snt/kWh"
     summarySheet['E7'] = transferPrice
@@ -679,7 +688,7 @@ def generate_excel(data):
     summarySheet['F11'] = "snt/kWh"
 
     summarySheet['E15'] = ""
-    summarySheet['F15'] = "EUR/kk"
+    summarySheet['F15'] = "€/kk"
     summarySheet['E16'] = (data["totalPrice"]/data["totalEnergy"])*100
     summarySheet['F16'] = "snt/kWh"
     summarySheet['E17'] = margin
@@ -958,7 +967,8 @@ def calculate_invoice():
                                     #If there is already data for that hour we have to add the energy to that hour
                                     hourString = "%s:00:00"%daytime.strftime("%Y-%m-%d %H")
                                     price = entsoeApi.getPriceOfHour(daytime)
-
+                                    if price == None:
+                                        print("Price is none for date: %s"%timestamp)
 
                                     if hourString in sessionData["EnergyDetails"]:
                                         #price should be same for whole hour
