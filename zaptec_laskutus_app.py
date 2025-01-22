@@ -4,7 +4,7 @@
 # Date: 2024-06-11
 # Version: 1.0
 
-import requests, json, xmltodict
+import requests, json, xmltodict, re
 import tkinter as tk
 from tkinter import ttk
 from tkcalendar import DateEntry
@@ -17,7 +17,7 @@ import openpyxl
 # Create the main window
 root = tk.Tk()
 root.title("Zapter Laskutus Appi")
-root.geometry("800x400")
+root.geometry("1000x500")
 print("Tkinter version:", tk.TkVersion)
 # Menu bar
 menu_bar = tk.Menu(root)
@@ -41,7 +41,7 @@ console_label.pack()
 output_text = tk.Text(right_frame)
 output_text.pack(fill=tk.X)
 
-output_text.insert("1.0", "Tervetuloa Vanhojen siilojen laskutus appiin\n")
+output_text.insert("1.0", "Tervetuloa Zaptec kulutusseuranta-appiin\n")
 
 # Left frame for other data data
 left_frame = ttk.Frame(root, borderwidth=2)
@@ -59,7 +59,7 @@ class zaptec:
         self.output = None
 
         self.chargers = {}
-        self.chargers_url = "https://api.zaptec.com/api/chargers?ReturnIdNameOnly=true"
+        self.chargers_url = "https://api.zaptec.com/api/chargers"
 
         #Tunnit pitää olla muuten ei ota sen päivän tietoja. From päivä voi olla ilman tunteja
         self.firsthoururl = "00%3A00%3A00.000"
@@ -121,8 +121,8 @@ class zaptec:
                 self.chargerHistories[chargerName] = response.json()
                 self.output.insert(tk.END, "Laturitiedot haettu onnistuneesti\n")
                 #For debugging
-                #with open(fileName, "w") as write_file:
-                #    json.dump(self.chargerHistories[chargerName], write_file, indent=4)
+                with open(fileName, "w") as write_file:
+                    json.dump(self.chargerHistories[chargerName], write_file, indent=4)
 
                 return True
             else:
@@ -154,11 +154,12 @@ class entsoe:
                 rangeEndTime = datetime.strptime(range["endTime"],"%Y%m%d%H%M")
                 print("rangeEndTime: ")
                 print(rangeEndTime)
-                if rangeStartTime < origStartTime and rangeEndTime > origEndTime:
+                if rangeStartTime <= origStartTime and rangeEndTime >= origEndTime:
                     print ("Match between range. No need to fetch data again")
                     return True
             return False
         else:
+            print("No time ranges available")
             return False
 
     def getDayAheadData(self,startTime, endTime):
@@ -492,8 +493,8 @@ def billInfo():
 def pricesInfo():
     # implementation of the login window.
     pricesInfo_window = tk.Toplevel(root)
-    pricesInfo_window.title("Hinta tiedot")
-    pricesInfo_window.geometry("300x250")
+    pricesInfo_window.title("Hintatiedot")
+    pricesInfo_window.geometry("400x400")
 
     global vat
     global margin
@@ -725,7 +726,7 @@ def generate_excel(data):
 
     #Column I-J
     summarySheet['I2'] = "Yhteensä"
-    summarySheet['I5'] = basePrice
+    summarySheet['I5'] = basePriceTransfer
     summarySheet['J5'] = "€"
     summarySheet['I6'] = "=C6*E6/100+G6"
     summarySheet['J6'] = "€"
@@ -740,7 +741,7 @@ def generate_excel(data):
     summarySheet['I11'] = "=C11*E11/100+G11"
     summarySheet['J11'] = "€"
 
-    summarySheet['I15'] = basePriceTransfer
+    summarySheet['I15'] = basePrice
     summarySheet['J15'] = "€"
     summarySheet['I16'] = "=C16*E16/100+G16"
     summarySheet['J16'] = "€"
@@ -748,7 +749,7 @@ def generate_excel(data):
     summarySheet['J17'] = "€"
 
     summarySheet['B21'] = ""
-    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Kulutus yht.", "", "Siirtomaksu*","","Kaikki yht.","","*Siirtomaksu lasketaan laskemalla huoltovarmuusmaksu, energiavero, talviajan ja muun ajan kuklutus jaettuna AP:n kulutuksen mukaan. Lisäksi siihen tulee kuukausimaksut jaettuna aktiivisten käyttäjien mukaan"]
+    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Kulutus yht.", "", "Siirtomaksu*","","Kaikki yht.","","*Siirtomaksu lasketaan laskemalla huoltovarmuusmaksu, energiavero, talviajan ja muun ajan kulutus jaettuna AP:n kulutuksen mukaan. Lisäksi siihen tulee kuukausimaksut jaettuna latureitten määrällä"]
     summarySheet.append(chargerHeader)
 
     scln=22
@@ -777,9 +778,11 @@ def generate_excel(data):
         scln += 1
         if chargerData["ChargerTotalEnergy"] == 0.0 :
             summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", 0, "€",0,"€"]
+            transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+IF(C7=0,0,(C%s/C7)*I7)+IF(C6=0,0,(C%s/C6)*I6)+IF(I5=0,0,I5/COUNT(C%s:C%s))+IF(I15=0,0,I15/COUNT(C%s:C%s))"%(scln,scln,scln,scln,firstChargerLine,lastChargerLine,firstChargerLine,lastChargerLine)
+            summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", transferpricecell, "€","=I%s+K%s"%(scln,scln),"€"]
             summarySheet.append(summaryLine)
         else:
-            transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+IF(C7=0,0,(C%s/C7)*I7)+IF(C6=0,0,(C%s/C6)*I6)+IF(I5=0,0,I5/COUNTIF(C%s:C%s,\">0\"))+IF(I15=0,0,I15/COUNTIF(C%s:C%s,\">0\"))"%(scln,scln,scln,scln,firstChargerLine,lastChargerLine,firstChargerLine,lastChargerLine)
+            transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+IF(C7=0,0,(C%s/C7)*I7)+IF(C6=0,0,(C%s/C6)*I6)+IF(I5=0,0,I5/COUNT(C%s:C%s))+IF(I15=0,0,I15/COUNT(C%s:C%s))"%(scln,scln,scln,scln,firstChargerLine,lastChargerLine,firstChargerLine,lastChargerLine)
             summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+E17"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s"%(scln, scln, scln), "€", transferpricecell, "€","=I%s+K%s"%(scln,scln),"€"]
             summarySheet.append(summaryLine)
 
@@ -802,7 +805,7 @@ def generate_excel(data):
             #line = ["Yhteensä", session["totalEnergyFromHours"], averageprice, session["totalEnergyPriceFromHours"]]
             #chargerSheet.append(line)
 
-    wb.save("Lasku %s - %s -uusi.xlsx"%(fromDate,toDate))
+    wb.save("%s %s - %s.xlsx"%(data["InstallationName"],fromDate,toDate))
 
 
 def calculate_invoice():
@@ -823,47 +826,22 @@ def calculate_invoice():
     entsoeApi.addLogger(output_text)
     entsoeApi.getDayAheadData(fromDate, toDate)
 
-    wb = openpyxl.Workbook()
-    summarySheet = wb.active
-    summarySheet.title = "Yhteenveto"
-    summarySheet['A1'] = "Ajanjakso:"
-    summarySheet['B1'] = "%s - %s"%(fromDate, toDate)
-    summarySheet["A3"] = "Siirtohinta"
-    summarySheet["C3"] = "Talvipäivä (%s snt/kWh)"%transferPriceWinter
-    summarySheet["D3"] = "muu aika (%s snt/kWh)"%transferPrice
-    summarySheet["E3"] = "Energiavero (%s snt/kWh)"%energyTax
-
-    summarySheet["A4"] = "Kokonaiskulutus (kWh):"
-    summarySheet["A5"] = "Pörssisähkön Keskihinta (€/kWh):"
-    summarySheet["A6"] = "Pörssisähkön Kokonaishinta (€):"
-    summarySheet["A7"] = "Siirtomaksu (€):"
-
-    summarySheet['A9'] = "Laturi"
-    summarySheet['B9'] = "Kokonaiskulutus (kWh)"
-    summarySheet['C9'] = "Keskihinta (€/kWh)"
-    summarySheet['D9'] = "Siirtomaksu Talviaika (€)"
-    summarySheet['E9'] = "Siirtomaksu muu aika (€)"
-    summarySheet['F9'] = "Marginaali (€)"
-    summarySheet['F9'] = "Energiavero (€)"
-    summarySheet['G9'] = "ALV (€)"
-    summarySheet['H9'] = "Kulutuksen hinta (€)"
-    summarySheet['I9'] = "Kiinteät kulut (€)"
-    summarySheet['J9'] = "Yhteensä (€)"
-
     excelData = {}
     excelData["totalEnergy"] = 0.0
     excelData["totalEnergyWinter"] = 0.0
     excelData["totalPrice"] = 0.0
     excelData["chargers"] = []
 
-    chargerSheets= {}
+    #chargerSheets= {}
     #Get all selected chargers
     chargerIndex = 0
     for widget in left_frame.winfo_children():
         if isinstance(widget, ttk.Checkbutton):
             #print("%s: %s"%(widget["text"], widget.state()))
             if widget.instate(['selected']):
-                chargerName = widget["text"]
+                m = re.search(r'([A-Za-z0-9 ]*) - (.*) ',widget["text"])
+                excelData["InstallationName"] = m.group(2)
+                chargerName = m.group(1)
                 print(chargerName)
                 #Get charger id
                 for charger in zaptecApi.chargers["Data"]:
@@ -874,37 +852,17 @@ def calculate_invoice():
                         chargerIndex += 1
                         chargerId = charger["Id"]
                         #print(chargerId)
-                        chargerSheets[chargerName] = wb.create_sheet(chargerName)
                         #Get charger history
                         return_value = zaptecApi.GetChargeHistory(chargerName, chargerId, fromDate, toDate)
                         if (return_value):
                             chargerHistory = zaptecApi.chargerHistories[chargerName]
                             print("Now we have Charger usage history so we can check all the data and calculate invoice")
-                            # Create invoice file
-                            # Loop all data from chargerHistory and calculate invoice
-                            # For each hour charger has energy, get the price from entsoe and calculate the invoice
-
-                            chargerSheets[chargerName].cell(row=1, column=1, value="%s lataustiedot aikavälillä %s - %s"%(chargerName, fromDate, toDate))
-
-                            chargerSheets[chargerName].cell(row=3, column=3, value="Talvipäivä")
-                            chargerSheets[chargerName].cell(row=3, column=4, value="Muu aika")
-                            chargerSheets[chargerName].cell(row=4, column=1, value="Kokonaiskulutus:")
-                            chargerSheets[chargerName].cell(row=5, column=1, value="Keskihinta:")
-                            chargerSheets[chargerName].cell(row=6, column=1, value="hinta yhteensä:")
-
-                            chargerSheets[chargerName].cell(row=8, column=1, value="Latausjaksojen yhteenveto:")
-                            header = ["jakso", "Aikaväli", "Kulutus (kWh)", "keskihinta (€/kWh)", "hinta (€)", "Kulutus talviaikana (kWh)", "Kulutus muuna aikana (kWh)","","","Aika","Kulutus","hinta"]
-                            chargerSheets[chargerName].append(header)
 
                             sessioIndex = 0
                             chargerData["ChargerTotalEnergy"] = 0.0
                             chargerData["chargerTotalPrice"] = 0.0
                             chargerData["ChargerTotalEnergyWinter"] = 0.0
                             chargerData["sessions"] = []
-                            hourPriceTimeColumn = 10
-                            hourPriceUsageColumn = 11
-                            hourPriceColumn = 12
-                            hourPriceInfoRow = 10
 
                             for session in chargerHistory["Data"]:
                                 sessioIndex += 1
@@ -984,11 +942,6 @@ def calculate_invoice():
 
                                     sessionDataInTimeRange = sessionDataInTimeRange + energy
 
-                                    chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceTimeColumn, value=timestamp)
-                                    chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceUsageColumn, value=energy)
-                                    chargerSheets[chargerName].cell(row=hourPriceInfoRow, column=hourPriceColumn, value=price)
-                                    hourPriceInfoRow += 1
-
                                     #Check if time is in winter price time
                                     if isDateInWinterPriceTime(daytime) :
                                         #print (daytime)
@@ -1012,61 +965,17 @@ def calculate_invoice():
                                 else:
                                     sessionData["averagePriceForSessionEnergy"] = sessionData["totalEnergyPriceFromHours"]/sessionData["totalEnergyFromHours"]
 
-                                chargerSheets[chargerName].append([sessioIndex, "%s - %s"%(session["StartDateTime"], session["EndDateTime"]), sessionData["sessionTotalEnergy"], sessionData["averagePriceForSessionEnergy"], (sessionData["sessionTotalEnergy"]*sessionData["averagePriceForSessionEnergy"]), sessionData["totalEnergyFromHoursWinter"], (sessionData["totalEnergyFromHours"] - sessionData["totalEnergyFromHoursWinter"])])
+                                #chargerSheets[chargerName].append([sessioIndex, "%s - %s"%(session["StartDateTime"], session["EndDateTime"]), sessionData["sessionTotalEnergy"], sessionData["averagePriceForSessionEnergy"], (sessionData["sessionTotalEnergy"]*sessionData["averagePriceForSessionEnergy"]), sessionData["totalEnergyFromHoursWinter"], (sessionData["totalEnergyFromHours"] - sessionData["totalEnergyFromHoursWinter"])])
                                 chargerData["chargerTotalPrice"] = chargerData["chargerTotalPrice"] + sessionData["totalEnergyPriceFromHours"]
                                 chargerData["ChargerTotalEnergyWinter"] = chargerData["ChargerTotalEnergyWinter"] + sessionData["totalEnergyFromHoursWinter"]
 
-                            summaryRow=chargerIndex+9
-                            #print("Summary row: %s"%summaryRow)
                             excelData["totalEnergy"] = excelData["totalEnergy"] + chargerData["ChargerTotalEnergy"]
                             excelData["totalEnergyWinter"] = excelData["totalEnergyWinter"] + chargerData["ChargerTotalEnergyWinter"]
                             excelData["totalPrice"] = excelData["totalPrice"] + chargerData["chargerTotalPrice"]
 
-                            if sessioIndex > 0:
-
-                                chargerSheets[chargerName].cell(row=4, column=2, value=chargerData["ChargerTotalEnergy"])
-                                chargerSheets[chargerName].cell(row=4, column=3, value=chargerData["ChargerTotalEnergyWinter"])
-                                chargerSheets[chargerName].cell(row=4, column=4, value=(chargerData["ChargerTotalEnergy"] - chargerData["ChargerTotalEnergyWinter"]))
-                                if chargerData["ChargerTotalEnergy"] != 0 :
-                                    chargerSheets[chargerName].cell(row=5, column=2, value=(chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"]))
-                                chargerSheets[chargerName].cell(row=6, column=2, value=chargerData["chargerTotalPrice"])
-
-
-                                summarySheet.cell(row=summaryRow, column=1, value=chargerName)
-                                summarySheet.cell(row=summaryRow, column=2, value=chargerData["ChargerTotalEnergy"])
-                                if chargerData["ChargerTotalEnergy"] != 0 :
-                                    summarySheet.cell(row=summaryRow, column=3, value=(chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"]))
-                                #column 4 is transfer price winter time
-                                summarySheet.cell(row=summaryRow, column=4, value=chargerData["chargerTotalPrice"])
-                                #column 5 is transfer price other time
-                                #column 6 is energy tax
-                                #column 7 is VAT of all the price
-                                #column 8 is total price of energy
-
-                            else:
-                                summarySheet.cell(row=summaryRow, column=1, value=chargerName)
-                                summarySheet.cell(row=summaryRow, column=2, value=0)
-                                summarySheet.cell(row=summaryRow, column=3, value=0)
-                                summarySheet.cell(row=summaryRow, column=4, value=0)
-
-
-
                         else:
                             showerror(title='Zaptec portal error', message="Request failed with status code %s and reason: %s\n"%(return_value.status_code, return_value.reason))
                             return False
-
-
-    summarySheet["B4"] = excelData["totalEnergy"]
-    summarySheet["C4"] = excelData["totalEnergyWinter"]
-    summarySheet["D4"] = (excelData["totalEnergy"] -excelData["totalEnergyWinter"])
-    #summarySheet["B5"] = excelData["totalPrice"]/excelData["totalEnergy"]
-    summarySheet["B5"] = "=B6/B4"
-    summarySheet["B6"] = excelData["totalPrice"]
-    summarySheet["C7"] = (excelData["totalEnergyWinter"]*transferPriceWinter)
-    summarySheet["D7"] = ((excelData["totalEnergy"] - excelData["totalEnergyWinter"])*transferPrice)/100
-
-    wb.save("Lasku %s - %s.xlsx"%(fromDate,toDate))
-    output_text.insert(tk.END, "Lasku %s - %s.xlsx luotu\n"%(fromDate,toDate))
 
     generate_excel(excelData)
 
@@ -1099,7 +1008,7 @@ def show_chargers():
     for charger in charger_list:
         global unchecked
         unchecked[charger["Name"]] = tk.BooleanVar(value=True)
-        check_button = ttk.Checkbutton(left_frame,text=str(charger["Name"]),variable=unchecked[charger["Name"]] )
+        check_button = ttk.Checkbutton(left_frame,text=str("%s - %s"%(charger["Name"],charger["InstallationName"])),variable=unchecked[charger["Name"]] )
         check_button.pack()
 
     #Invoice button
