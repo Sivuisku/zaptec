@@ -727,29 +727,34 @@ def generate_excel(data):
     #Column I-J
     summarySheet['I2'] = "Yhteensä"
     summarySheet['I5'] = basePriceTransfer
-    summarySheet['J5'] = "€"
+    summarySheet['J5'] = "€**"
     summarySheet['I6'] = "=C6*E6/100+G6"
-    summarySheet['J6'] = "€"
+    summarySheet['J6'] = "€***"
     summarySheet['I7'] = "=C7*E7/100+G7"
-    summarySheet['J7'] = "€"
+    summarySheet['J7'] = "€***"
     summarySheet['I8'] = tehoMaksu
-    summarySheet['J8'] = "€"
+    summarySheet['J8'] = "€***"
     summarySheet['I9'] = loisTehoMaksu
-    summarySheet['J9'] = "€"
+    summarySheet['J9'] = "€***"
     summarySheet['I10'] = "=C10*E10/100+G10"
-    summarySheet['J10'] = "€"
+    summarySheet['J10'] = "€***"
     summarySheet['I11'] = "=C11*E11/100+G11"
-    summarySheet['J11'] = "€"
+    summarySheet['J11'] = "€***"
 
     summarySheet['I15'] = basePrice
-    summarySheet['J15'] = "€"
+    summarySheet['J15'] = "€***"
     summarySheet['I16'] = "=C16*E16/100+G16"
-    summarySheet['J16'] = "€"
+    summarySheet['J16'] = "€****"
     summarySheet['I17'] = "=C17*E17/100+G17"
-    summarySheet['J17'] = "€"
+    summarySheet['J17'] = "€****"
 
     summarySheet['B21'] = ""
-    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Kulutus yht.", "", "Siirtomaksu*","","Kaikki yht.","","*Siirtomaksu lasketaan laskemalla huoltovarmuusmaksu, energiavero, talviajan ja muun ajan kulutus jaettuna AP:n kulutuksen mukaan. Lisäksi siihen tulee kuukausimaksut jaettuna latureitten määrällä"]
+    summarySheet['N10'] = "*Siirtomaksu lasketaan laskemalla huoltovarmuusmaksu, energiavero, talviajan ja muun ajan kulutus jaettuna AP:n kulutuksen mukaan. Lisäksi siihen tulee kuukausimaksut jaettuna latureitten määrällä"
+    summarySheet['N11'] = "** Jos arvo, se jaetaan kaikkien latureiden kesken"
+    summarySheet['N12'] = "*** Jos arvo, se jaetaan latureiden kesken joilla on kulutusta ajan jaksolla"
+    summarySheet['N13'] = "**** Laskettu laturien kulutuksen mukaan. Muuttaminen täällä ei vaikuta laturien hintaan"
+
+    chargerHeader = ["", "Laturi", "Määrä", "", "Yksikköhinta", "", "ALV", "", "Kulutus yht.", "", "Siirtomaksu*","","Kaikki yht."]
     summarySheet.append(chargerHeader)
 
     scln=22
@@ -776,14 +781,23 @@ def generate_excel(data):
         header = ["Tunti", "Kulutus (kWh)", "hinta (€/kWh)", "hinta (€)"]
         chargerSheet.append(header)
         scln += 1
+        c10 = "((C%s/C10)*I10)"%scln
+        c11 = "((C%s/C11)*I11)"%scln
+        c7 = "IF(C7=0,0,(C%s/C7)*I7)"%scln
+        c6 = "IF(C6=0,0,(C%s/C6)*I6)"%scln
+        i5 = "IF(I5=0,0,I5/COUNT(C%s:C%s))"%(firstChargerLine,lastChargerLine)
+        i15 = "IF(C%s=0,0,IF(I15=0,0,I15/COUNT(C%s:C%s)))"%(scln,firstChargerLine,lastChargerLine)
+        i8 = 'IF(C%s=0,0,IF(I8=0,0,I8/COUNTIF(C%s:C%s,">0")))'%(scln,firstChargerLine,lastChargerLine)
+        i9 = 'IF(C%s=0,0,IF(I9=0,0,I9/COUNTIF(C%s:C%s,">0")))'%(scln,firstChargerLine,lastChargerLine)
+
+        transfercell = "=(%s+%s+%s+%s+%s+%s+%s+%s)"%(c10,c11,c7,c6,i5,i15,i8,i9)
+        print("transfercell")
+        print(transfercell.replace(",",";"))
         if chargerData["ChargerTotalEnergy"] == 0.0 :
-            summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", 0, "€",0,"€"]
-            transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+IF(C7=0,0,(C%s/C7)*I7)+IF(C6=0,0,(C%s/C6)*I6)+IF(I5=0,0,I5/COUNT(C%s:C%s))+IF(I15=0,0,I15/COUNT(C%s:C%s))"%(scln,scln,scln,scln,firstChargerLine,lastChargerLine,firstChargerLine,lastChargerLine)
-            summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", transferpricecell, "€","=I%s+K%s"%(scln,scln),"€"]
+            summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", transfercell, "€","=I%s+K%s"%(scln,scln),"€"]
             summarySheet.append(summaryLine)
         else:
-            transferpricecell="=((C%s/C10)*I10)+((C%s/C11)*I11)+IF(C7=0,0,(C%s/C7)*I7)+IF(C6=0,0,(C%s/C6)*I6)+IF(I5=0,0,I5/COUNT(C%s:C%s))+IF(I15=0,0,I15/COUNT(C%s:C%s))"%(scln,scln,scln,scln,firstChargerLine,lastChargerLine,firstChargerLine,lastChargerLine)
-            summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+E17"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s"%(scln, scln, scln), "€", transferpricecell, "€","=I%s+K%s"%(scln,scln),"€"]
+            summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+E17"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s"%(scln, scln, scln), "€", transfercell, "€","=I%s+K%s"%(scln,scln),"€"]
             summarySheet.append(summaryLine)
 
         sessionIndex=0
