@@ -601,7 +601,6 @@ def isDateInWinterPriceTime(daytime):
 
     #If date is between 31.3 - 1.11
     if winterDateEnd < daytime < winterDateStart:
-        #print ("Date is not in winter time")
         return False
     else:
         if winterHourStart < daytime < winterHourEnd :
@@ -707,9 +706,9 @@ def generate_excel(data):
     summarySheet['H6'] = "€"
     summarySheet['G7'] = "=((C7*E7)/100)*%s"%(vat-1)
     summarySheet['H7'] = "€"
-    summarySheet['G8'] = tehoMaksu/124*24
+    summarySheet['G8'] = "-"
     summarySheet['H8'] = "€"
-    summarySheet['G9'] = loisTehoMaksu*vat/100
+    summarySheet['G9'] = "-"
     summarySheet['H9'] = "€"
     summarySheet['G10'] = "=((C10*E10)/100)*%s"%(vat-1)
     summarySheet['H10'] = "€"
@@ -778,26 +777,25 @@ def generate_excel(data):
         chargerSheet["B6"] = chargerData["chargerTotalPrice"]
 
         chargerSheet.cell(row=8, column=1, value="Latausjaksojen yhteenveto:")
-        header = ["Tunti", "Kulutus (kWh)", "hinta (€/kWh)", "hinta (€)"]
+        header = ["Tunti", "Kulutus (kWh)", "hinta (€/kWh)", "hinta (€)", "Ajanjakso"]
         chargerSheet.append(header)
         scln += 1
         c10 = "((C%s/C10)*I10)"%scln
         c11 = "((C%s/C11)*I11)"%scln
-        c7 = "IF(C7=0,0,(C%s/C7)*I7)"%scln
-        c6 = "IF(C6=0,0,(C%s/C6)*I6)"%scln
+        c7 = "IF(C7=0,0,('%s'!D4/C7)*I7)"%chargerName
+        c6 = "IF(C6=0,0,('%s'!C4/C6)*I6)"%chargerName
         i5 = "IF(I5=0,0,I5/COUNT(C%s:C%s))"%(firstChargerLine,lastChargerLine)
-        i15 = "IF(C%s=0,0,IF(I15=0,0,I15/COUNT(C%s:C%s)))"%(scln,firstChargerLine,lastChargerLine)
+        i15 = 'IF(C%s=0,0,IF(I15=0,0,I15/COUNTIF(C%s:C%s,">0")))'%(scln,firstChargerLine,lastChargerLine)
         i8 = 'IF(C%s=0,0,IF(I8=0,0,I8/COUNTIF(C%s:C%s,">0")))'%(scln,firstChargerLine,lastChargerLine)
         i9 = 'IF(C%s=0,0,IF(I9=0,0,I9/COUNTIF(C%s:C%s,">0")))'%(scln,firstChargerLine,lastChargerLine)
 
-        transfercell = "=(%s+%s+%s+%s+%s+%s+%s+%s)"%(c10,c11,c7,c6,i5,i15,i8,i9)
-        print("transfercell")
-        print(transfercell.replace(",",";"))
+        transfercell = "=(%s+%s+%s+%s+%s+%s+%s)"%(c10,c11,c7,c6,i5,i8,i9)
+
         if chargerData["ChargerTotalEnergy"] == 0.0 :
             summaryLine = ["", chargerName, 0, "kWh", 0, "snt/kWh", 0, "€", 0, "€", transfercell, "€","=I%s+K%s"%(scln,scln),"€"]
             summarySheet.append(summaryLine)
         else:
-            summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+E17"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s"%(scln, scln, scln), "€", transfercell, "€","=I%s+K%s"%(scln,scln),"€"]
+            summaryLine = ["", chargerName, "=%s+%s"%((chargerData["ChargerTotalEnergy"]-chargerData["ChargerTotalEnergyWinter"]),chargerData["ChargerTotalEnergyWinter"]), "kWh", "=%s+E17"%((chargerData["chargerTotalPrice"]/chargerData["ChargerTotalEnergy"])*100), "snt/kWh", "=(C%s*E%s)/100*%s"%(scln,scln,vat-1), "€", "=(C%s*E%s)/100+G%s+%s"%(scln, scln, scln,i15), "€", transfercell, "€","=I%s+K%s"%(scln,scln),"€"]
             summarySheet.append(summaryLine)
 
         sessionIndex=0
@@ -809,7 +807,7 @@ def generate_excel(data):
             #print("Charger name: %s, session Index: %s"%(chargerName, sessionIndex))
             #print(session)
             for key, value in session["EnergyDetails"].items():
-                line = [key,value["energy"],value["price"],"=B%s*C%s"%(linenumber,linenumber)]
+                line = [key,value["energy"],value["price"],"=B%s*C%s"%(linenumber,linenumber),value["wintertime"]]
                 chargerSheet.append(line)
                 linenumber = linenumber+1
             if session["totalEnergyFromHours"] != 0.0:
@@ -819,6 +817,9 @@ def generate_excel(data):
             #line = ["Yhteensä", session["totalEnergyFromHours"], averageprice, session["totalEnergyPriceFromHours"]]
             #chargerSheet.append(line)
 
+    #Add some sums after charger lines
+    sumline = ["","Yhteensä:", "","","","","","","=sum(I%s:I%s)"%(firstChargerLine,lastChargerLine),"","=sum(K%s:K%s)"%(firstChargerLine,lastChargerLine),"","=sum(M%s:M%s)"%(firstChargerLine,lastChargerLine)]
+    summarySheet.append(sumline)
     wb.save("%s %s - %s.xlsx"%(data["InstallationName"],fromDate,toDate))
 
 
@@ -961,8 +962,10 @@ def calculate_invoice():
                                         #print (daytime)
                                         #print ("is on winter time")
                                         sessionData["totalEnergyFromHoursWinter"] = (sessionData["totalEnergyFromHoursWinter"] + energy)
-                                    #else:
-                                    #    print ("is not on winter time")
+                                        sessionData["EnergyDetails"][hourString]["wintertime"] = "talvi"
+                                    else:
+                                        #print ("is not on winter time")
+                                        sessionData["EnergyDetails"][hourString]["wintertime"] = "Kesä"
 
                                     sessionData["totalEnergyFromHours"] = (sessionData["totalEnergyFromHours"] + energy)
                                     sessionData["totalEnergyPriceFromHours"] = sessionData["totalEnergyPriceFromHours"] + (energy*price)
