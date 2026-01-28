@@ -1,8 +1,8 @@
 # Python app to connect zaptec portal and get charging history data
 # Also able to give pool electric price file for invoice
 # Author: Kari Sivonen
-# Date: 2024-06-11
-# Version: 1.0
+# Date: 2026-26-01
+# Version: 1.1
 
 import requests, json, xmltodict, re
 import tkinter as tk
@@ -65,7 +65,7 @@ class zaptec:
         self.firsthoururl = "00%3A00%3A00.000"
         self.lasthoururl = "23%3A59%3A00.000"
         self.chargerHistories = {}
-        self.chargerHistory_url = "https://api.zaptec.com/api/chargehistory?ChargerId=%s&From=%sT%s&To=%sT%s&GroupBy=0&DetailLevel=1"
+        self.chargerHistory_url = "https://api.zaptec.com/api/chargehistory?ChargerId=%s&From=%sT%s&To=%sT%s&GroupBy=0&DetailLevel=1&PageSize=100"
         #self.chargerHistory_url = "https://api.zaptec.com/api/chargehistory?ChargerId=5bdfee4e-9b03-4662-9258-dd1b14ebf54b&From=2024-05-01&To=2024-05-31&GroupBy=0&DetailLevel=1"
 
     def storeApikey(self, apikey):
@@ -105,29 +105,90 @@ class zaptec:
 
     def GetChargeHistory(self, chargerName, chargerId, startTime, endTime):
         print ("GetChargeHistory: %s, %s, %s, %s"%(chargerName, chargerId, startTime, endTime))
-        fileName = "chargerHistory_%s_%s-%s.json"%(chargerName, startTime, endTime)
+        fileName = "chargerHistory_%s_%s_%s-%s.json"%(chargerId, chargerName, startTime, endTime)
         if os.path.exists(fileName):
             with open(fileName, "r") as file:
-                self.chargerHistories[chargerName] = json.load(file)
+                self.chargerHistories[chargerId] = json.load(file)
             return True
 
         else:
 
-            print ("requesturl: %s"%(self.chargerHistory_url%(chargerId, (startTime-timedelta(days=1)), self.firsthoururl, endTime, self.lasthoururl)))
-            #print ("Request header: %s"%self.headers)
-            response = requests.get(self.chargerHistory_url%(chargerId, (startTime-timedelta(days=1)), self.firsthoururl, endTime, self.lasthoururl), headers=self.headers)
-            if response.status_code == 200:
-                #Changer usage info is in UTC time
-                self.chargerHistories[chargerName] = response.json()
-                self.output.insert(tk.END, "Laturitiedot haettu onnistuneesti\n")
-                #For debugging
-                with open(fileName, "w") as write_file:
-                    json.dump(self.chargerHistories[chargerName], write_file, indent=4)
+            # Calculate total time range
+            delta = endTime - startTime
 
-                return True
+            # If time range is more than 31 days, split it into parts
+            if delta.days > 31:
+                print("Time range is more than 31 days (%s). Splitting into parts..." % delta.days)
+
+                all_histories = []
+                current_start = startTime
+
+                while (endTime - current_start).days > 31:
+                    # Request 31 days at a time
+                    current_end = current_start + timedelta(days=31)
+
+                    print("Requesting part: %s to %s" % (current_start, current_end))
+                    print("Request URL: %s" % (self.chargerHistory_url % (chargerId, (current_start - timedelta(days=1)), self.firsthoururl, current_end, self.lasthoururl)))
+
+                    response = requests.get(
+                        self.chargerHistory_url % (chargerId, (current_start - timedelta(days=1)), self.firsthoururl, current_end, self.lasthoururl),
+                        headers=self.headers
+                    )
+
+                    if response.status_code == 200:
+                        part_data = response.json()
+                        all_histories.extend(part_data.get("Data", []))
+                    else:
+                        showerror(title='Zaptec portal error', message="Request failed with status code %s and reason: %s\n" % (response.status_code, response.reason))
+                        return response
+
+                    current_start = current_end
+
+                # Request the remaining days
+                print("Requesting remaining part: %s to %s" % (current_start, endTime))
+                print("Request URL: %s" % (self.chargerHistory_url % (chargerId, (current_start - timedelta(days=1)), self.firsthoururl, endTime, self.lasthoururl)))
+
+                response = requests.get(
+                    self.chargerHistory_url % (chargerId, (current_start - timedelta(days=1)), self.firsthoururl, endTime, self.lasthoururl),
+                    headers=self.headers
+                )
+
+                if response.status_code == 200:
+                    part_data = response.json()
+                    all_histories.extend(part_data.get("Data", []))
+
+                    # Combine all parts into single response structure
+                    self.chargerHistories[chargerId] = {"Data": all_histories}
+                    self.output.insert(tk.END, "Laturitiedot haettu onnistuneesti (useassa osassa)\n")
+
+                    # Save to file
+                    with open(fileName, "w") as write_file:
+                        json.dump(self.chargerHistories[chargerId], write_file, indent=4)
+
+                    return True
+                else:
+                    showerror(title='Zaptec portal error', message="Request failed with status code %s and reason: %s\n" % (response.status_code, response.reason))
+                    return response
+
             else:
-                showerror(title='Entsoe portal error', message="Request failed with status code %s and reason: %s\n"%(response.status_code, response.reason))
-                return response
+                # Original code for 31 days or less
+                print("Request URL: %s" % (self.chargerHistory_url % (chargerId, (startTime - timedelta(days=1)), self.firsthoururl, endTime, self.lasthoururl)))
+                response = requests.get(
+                    self.chargerHistory_url % (chargerId, (startTime - timedelta(days=1)), self.firsthoururl, endTime, self.lasthoururl),
+                    headers=self.headers
+                )
+
+                if response.status_code == 200:
+                    self.chargerHistories[chargerId] = response.json()
+                    self.output.insert(tk.END, "Laturitiedot haettu onnistuneesti\n")
+
+                    with open(fileName, "w") as write_file:
+                        json.dump(self.chargerHistories[chargerId], write_file, indent=4)
+
+                    return True
+                else:
+                    showerror(title='Zaptec portal error', message="Request failed with status code %s and reason: %s\n" % (response.status_code, response.reason))
+                    return response
 
 class entsoe:
     def __init__(self):
@@ -854,15 +915,18 @@ def calculate_invoice():
         if isinstance(widget, ttk.Checkbutton):
             #print("%s: %s"%(widget["text"], widget.state()))
             if widget.instate(['selected']):
-                m = re.search(r'([A-Za-z0-9 ]*) - (.*) ',widget["text"])
-                excelData["InstallationName"] = m.group(2)
+                m = re.search(r'([A-Za-z0-9 ]*) - (.*)',widget["text"])
+                #excelData["InstallationName"] = m.group(2)
+                excelData["InstallationName"] = "Tervahovin vanhat siilot"
                 chargerName = m.group(1)
+                chargerDeviceId = m.group(2)
                 print(chargerName)
+                print(chargerDeviceId)
                 #Get charger id
                 for charger in zaptecApi.chargers["Data"]:
-                    if charger["Name"] == chargerName:
+                    if charger["DeviceId"] == chargerDeviceId:
                         chargerData = {}
-                        chargerData["Name"] = chargerName
+                        chargerData["Name"] = "%s-%s"%(chargerName, charger["DeviceId"])
                         excelData["chargers"].append(chargerData)
                         chargerIndex += 1
                         chargerId = charger["Id"]
@@ -870,7 +934,7 @@ def calculate_invoice():
                         #Get charger history
                         return_value = zaptecApi.GetChargeHistory(chargerName, chargerId, fromDate, toDate)
                         if (return_value):
-                            chargerHistory = zaptecApi.chargerHistories[chargerName]
+                            chargerHistory = zaptecApi.chargerHistories[chargerId]
                             print("Now we have Charger usage history so we can check all the data and calculate invoice")
 
                             sessioIndex = 0
@@ -1024,8 +1088,8 @@ def show_chargers():
 
     for charger in charger_list:
         global unchecked
-        unchecked[charger["Name"]] = tk.BooleanVar(value=True)
-        check_button = ttk.Checkbutton(left_frame,text=str("%s - %s"%(charger["Name"],charger["InstallationName"])),variable=unchecked[charger["Name"]] )
+        unchecked[charger["DeviceId"]] = tk.BooleanVar(value=True)
+        check_button = ttk.Checkbutton(left_frame,text=str("%s - %s"%(charger["Name"],charger["DeviceId"])),variable=unchecked[charger["DeviceId"]] )
         check_button.pack()
 
     #Invoice button
